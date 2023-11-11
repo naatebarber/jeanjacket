@@ -105,10 +105,13 @@ def join(i: List[List[Any]]):
 async def main():
     global global_mm
     global global_lr
+    global global_cr
 
-    population_size = 500
-    epochs = 100
+    population_size = 50
+    epochs = 200
     n_iters_per_org = 100
+    # Carry over n% of the previous population
+    population_carryover = 0.05
     procs = os.cpu_count()
 
     population = build_population(population_size)
@@ -159,11 +162,11 @@ async def main():
         history["avg_loss_over_generations"].append(avg_population_loss)
 
         sorted_by_perf = sorted(performances.items(), key=lambda x: x[1])
-        top_ten = sorted_by_perf[0:10]
-        top_performers = [population[e[0]] for e in top_ten]
-        top_performances = [e[1] for e in top_ten]
+        num_to_carry_over = int(len(sorted_by_perf) * population_carryover)
+        top = sorted_by_perf[0:num_to_carry_over]
 
-        top_5_performers = top_performers[0:5]
+        top_performers = [population[e[0]] for e in top]
+        top_performances = [e[1] for e in top]
 
         peak_population_loss = np.mean(top_performances)
         print(f"Peak population loss: {peak_population_loss}")
@@ -173,12 +176,15 @@ async def main():
         print("Best performance:", best_loss)
         history["best_loss_over_generations"].append(best_loss)
 
-        population = top_5_performers + build_population(
-            population_size - 5, top_5_performers
+        population = top_performers + build_population(
+            population_size - len(top_performers), top_performers
         )
 
-        # global_mm *= 0.95
-        # global_lr *= 0.95
+        if global_mm > 0:
+            global_mm *= 0.99
+
+        if global_cr < 1:
+            global_cr /= 0.99
 
     for i in range(len(population)):
         org = population[i]

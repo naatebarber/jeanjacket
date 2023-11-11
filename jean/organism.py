@@ -1,5 +1,6 @@
-import torch 
+import torch
 import torch.nn as nn
+
 
 class Organism(nn.Module):
     def __init__(self, d_in, d_ff, d_out, device=torch.device("cpu")):

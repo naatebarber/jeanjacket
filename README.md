@@ -6,6 +6,7 @@ Now need to do some stuff:
 ### IN ORDER:  
  - Move all this spaghetti bs into classes.
  - Experiment with a better env (y = max(x)**2) is weak lol.
+ - Play with classification (rn im just doing regression)
  - Add a user dialog with the best organism to manually evaluate
  - Instantiate "species" of organisms, with different weights and architectures.
  - Allow only orgs of the same species to crossover.

@@ -44,6 +44,7 @@ class Organism(nn.Module):
 
         for i, fc in enumerate(self.fcs[:-1]):
             layer = nn.Linear(fc, self.fcs[i + 1]).to(self.device)
+            nn.init.uniform_(layer.weight, -2, 2)
             activ = nn.ReLU().to(self.device)
             self.layers.append(layer)
             self.activations.append(activ)

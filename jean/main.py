@@ -19,7 +19,7 @@ async def main():
         "max_layers": 4,
         "inputs": 10,
         "outputs": 1,
-        "population_size": 1000,
+        "population_size": 100,
         "classifier": False,
         "decay": 0.995,
     }
@@ -37,7 +37,7 @@ async def main():
 
     jacket.loss(loss)
 
-    epochs = 100
+    epochs = 1000
 
     avg_losses = []
     best_losses = []

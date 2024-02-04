@@ -4,10 +4,17 @@ import torch
 
 
 class Env(ABC):
+    def __init__(self):
+        self.current_state = None
+
     @abstractmethod
-    def state() -> torch.TensorType:
+    def state(self) -> torch.TensorType:
         pass
 
     @abstractmethod
-    def act(action: torch.TensorType) -> Tuple[Any, torch.TensorType]:
+    def rule(self, state: torch.TensorType, action: torch.TensorType) -> Any:
+        pass
+
+    @abstractmethod
+    def act(self, action: torch.TensorType) -> Tuple[Any, torch.TensorType]:
         pass

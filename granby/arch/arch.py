@@ -47,7 +47,7 @@ class Unbag:
         p_d = d_in
         model = {}
 
-        for lay in hidden:
+        for lay in reversed(hidden):
             d = lay.get("d")
             fc = nn.Linear(p_d, d)
             fact = lambda fc: lambda x: lay.get("activation")(fc(x))
@@ -95,7 +95,7 @@ class QArchFF(nn.Module, QArch):
         self.forward = None
         self.gamma = bag.get("gamma")
 
-        for i, lay in reversed(enumerate(layers)):
+        for i, lay in enumerate(layers):
             fc = lay[0]
             fact = lay[1]
 
@@ -112,6 +112,7 @@ class QArchFF(nn.Module, QArch):
         self,
         state: torch.TensorType,
         act: Callable[[torch.TensorType], Tuple[Any, torch.TensorType]],
+        pack_loss: Callable[[torch.TensorType], None] = None
     ):
         current_q_values = self.forward(state)
         current_q_max = current_q_values.max(1)[0]
@@ -125,6 +126,9 @@ class QArchFF(nn.Module, QArch):
 
         target_q = reward + (self.gamma * next_q_max)
         loss = F.mse_loss(current_q_max, target_q)
+
+        if pack_loss:
+            pack_loss(loss)
 
         self.optim.zero_grad()
         loss.backward()
@@ -159,7 +163,7 @@ class Diluted(TypedDict):
 class BagOptimizer:
     def __init__(self, bag: Bag, env: Env, model: QArch):
         self.bag = bag
-        self.env = env
+        self.env = env        
         self.model = model
 
         meta = bag.get("meta")

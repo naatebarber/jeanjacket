@@ -70,10 +70,10 @@ class Mesh:
 
         state: List[Tuple[Transport, Cell]] = []
         for t in self.transports:
-            state.append([t, self.cells[0]])
+            state.append([t, random.choice(self.cells)])
 
         while current_size(self.transports) != output_length:
-            if len(state) is 0:
+            if len(state) == 0:
                 print("Failed to find a pathway")
                 break
 

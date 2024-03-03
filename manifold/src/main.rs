@@ -1,5 +1,4 @@
 mod arch;
-mod util;
 
 use arch::Manifold;
 use arch::Neuron;

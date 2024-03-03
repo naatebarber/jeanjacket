@@ -1,5 +1,5 @@
+use super::activation::{Activation, ActivationType};
 use super::Signal;
-use crate::util::{Activation, ActivationType};
 use rand::prelude::*;
 use rand::thread_rng;
 

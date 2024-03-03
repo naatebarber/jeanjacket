@@ -1,10 +1,9 @@
-
 pub struct Activation;
 
 impl Activation {
     pub fn relu(x: f64) -> f64 {
         if x < 0. {
-            return 0.
+            return 0.;
         }
         x
     }
@@ -24,6 +23,7 @@ impl Activation {
     }
 }
 
+#[derive(Debug)]
 pub enum ActivationType {
     Relu,
     LeakyRelu,

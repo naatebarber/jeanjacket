@@ -23,13 +23,13 @@ fn main() {
     // Stretch to max, and shrink to min in least number of steps possible
     // Swap neurons in path
 
-    static mut NEURONS: Vec<Neuron> = vec![];
+    let neuros = make_neurons(100);
+    let mut manifold = Manifold::new(4, 2, 30, &neuros);
+    manifold.weave();
 
-    unsafe {
-        let mut neurons = make_neurons(100);
-        NEURONS.append(&mut neurons);
-        let manifold = Manifold::new(4, 2, 30, &NEURONS);
+    let mut test_signals = Signal::random_normal(4);
+    println!("{:?}", test_signals);
 
-        manifold.weave();
-    }
+    manifold.forward(&mut test_signals);
+    println!("{:?}", test_signals);
 }

@@ -1,30 +1,34 @@
-use rand::thread_rng;
-use rand::prelude::*;
 use super::Signal;
 use crate::util::{Activation, ActivationType};
+use rand::prelude::*;
+use rand::thread_rng;
 
+#[derive(Debug)]
 pub enum NeuronOperation {
     Split,
     Merge,
-    Forward
+    Forward,
 }
 
+#[derive(Debug)]
 pub struct Neuron {
     w: f64,
     b: f64,
-    a: ActivationType
+    a: ActivationType,
 }
 
 impl Neuron {
     pub fn random_normal() -> Neuron {
         let mut rng = thread_rng();
-        let mut ats = vec![|| ActivationType::Relu, || ActivationType::Elu, || ActivationType::LeakyRelu];
+        let mut ats = vec![|| ActivationType::Relu, || ActivationType::Elu, || {
+            ActivationType::LeakyRelu
+        }];
         let activation = ats.choose_mut(&mut rng).unwrap();
 
         Neuron {
             w: rng.gen(),
             b: rng.gen(),
-            a: activation()
+            a: activation(),
         }
     }
 
@@ -32,7 +36,7 @@ impl Neuron {
         match self.a {
             ActivationType::Relu => Activation::relu(x),
             ActivationType::LeakyRelu => Activation::leaky_relu(x),
-            ActivationType::Elu => Activation::elu(x)
+            ActivationType::Elu => Activation::elu(x),
         }
     }
 
@@ -49,22 +53,24 @@ impl Neuron {
         let signal_b = signals.get(neighbor).unwrap();
 
         let merge = Signal {
-            x: signal_a.x + signal_b.x
+            x: signal_a.x + signal_b.x,
         };
 
-        signals.splice(target..neighbor, vec![merge]);
+        if target < neighbor {
+            signals.splice(target..neighbor + 1, vec![merge]);
+        } else {
+            signals.splice(target..target + 1, vec![]);
+            signals.splice(neighbor..neighbor + 1, vec![]);
+            signals.push(merge);
+        }
     }
 
     pub fn split(&self, signals: &mut Vec<Signal>, target: usize) {
         let signal = signals.get(target).unwrap();
 
         let md = signal.x / 2.;
-        let splits = vec![
-            Signal { x:md },
-            Signal { x:md }
-        ];
+        let splits = vec![Signal { x: md }, Signal { x: md }];
 
-
-        signals.splice(target..target+1, splits);
+        signals.splice(target..target + 1, splits);
     }
 }

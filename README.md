@@ -26,3 +26,19 @@ This should all be done in a q-learning type approach.
  - Use them to train smaller models
  - Rinse and repeat with a predefined generation breadth (# of models allowed to act as trainers per generation)
  - Train until a generation fails to hit the min cascading loss
+
+### Manifold 
+
+mumble mumble learn by finding different pathways through a changing neural mesh mumble mumble
+
+first / fast op: train the pathway, use some alg to find the best pathway
+second / slow op: evolve the neurons / swap out unused ones
+
+Cool part ab this architecture is that you could technically house 
+completely different experts / models in the same neural mesh since a learned trait is 
+mostly dictated by path
+
+Thought pool:
+
+ - Maybe we choose the output neurons beforehand (when making manifold) and use pathfinding algorithm to optimize?
+ - Maybe neurons need to be connected in order to forward/split/merge?

@@ -7,6 +7,7 @@ from torch._C import TensorType
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from copy import deepcopy
 from granby.env import Env
 
 
@@ -47,7 +48,7 @@ class Unbag:
         p_d = d_in
         model = {}
 
-        for lay in reversed(hidden):
+        for lay in hidden:
             d = lay.get("d")
             fc = nn.Linear(p_d, d)
             fact = lambda fc: lambda x: lay.get("activation")(fc(x))
@@ -88,25 +89,32 @@ class QArch(ABC):
 class QArchFF(nn.Module, QArch):
     def __init__(self, bag: Bag):
         super(QArchFF, self).__init__()
+        self.device = torch.device("cpu")
+
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
 
         contents = Unbag(bag)
         layers = contents.linear_trunk()
 
-        self.forward = None
         self.gamma = bag.get("gamma")
+        self.layers = nn.ModuleList()
+        self.facts = []
 
-        for i, lay in enumerate(layers):
-            fc = lay[0]
+        for lay in layers:
+            fc = lay[0].to(self.device)
+            self.layers.append(fc)
             fact = lay[1]
-
-            setattr(self, f"fc{i}", fc)
-            if not self.forward:
-                self.forward = fact(fc)
-            else:
-                self.forward = lambda x: fact(fc(self.forward(x)))
+            self.facts.append(fact(fc))
 
         alpha, momentum = contents.hyperparam_sgd()
         self.optim = optim.SGD(self.parameters(), lr=alpha, momentum=momentum)
+
+    def forward(self, x):
+        for fact in self.facts:
+            x = fact(x)
+
+        return x
 
     def q(
         self,
@@ -118,8 +126,6 @@ class QArchFF(nn.Module, QArch):
         current_q_max = current_q_values.max(1)[0]
 
         reward, next_state = act(current_q_values)
-
-        reward = F.relu(torch.Tensor([reward], dtype=torch.float32))
 
         next_q_values = self.forward(next_state)
         next_q_max = next_q_values.max(1)[0]

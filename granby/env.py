@@ -6,6 +6,9 @@ import torch
 class Env(ABC):
     def __init__(self):
         self.current_state = None
+        self.device = torch.device("cpu")
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
 
     @abstractmethod
     def state(self) -> torch.TensorType:

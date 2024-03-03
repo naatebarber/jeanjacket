@@ -1,10 +1,11 @@
 from granby.arch.arch import QArchFF, BagOptimizer, Bag, Unbag
 from granby.envs.cube_volume import CubeVolume
 import torch.nn.functional as F
+import torch
 
 def define_bag() -> Bag:
     return {
-        "activation_out": F.softmax,
+        "activation_out": lambda x: F.relu(x),
         "alpha": 0.0005,
         "drift_loss": None,
         "epsilon": 0.2,
@@ -36,5 +37,9 @@ if __name__ == "__main__":
 
     print("basic training")
 
-    for _ in range(100000):
+    for _ in range(10000):
         model.q(env.state(), env.act, pack_loss=lambda x: print(x))
+
+    ta = model.i(torch.tensor([3,3,3], dtype=torch.float32).to(torch.device("cuda")))
+
+    print(ta)

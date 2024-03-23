@@ -3,7 +3,7 @@ use super::Signal;
 use rand::prelude::*;
 use rand::thread_rng;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum NeuronOperation {
     Split,
     Merge,

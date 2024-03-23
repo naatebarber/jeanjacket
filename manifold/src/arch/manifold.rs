@@ -2,54 +2,59 @@ use super::{Neuron, NeuronOperation, Signal};
 use rand;
 use rand::prelude::*;
 
-#[derive(Debug)]
-pub struct Op<'a> {
-    neuron: &'a Neuron,
+#[derive(Debug, Clone)]
+pub struct Op {
     operation: NeuronOperation,
-    target: usize,
+    neuron_ix: usize,
+    signal_ix: usize,
 }
 
-impl Op<'_> {
-    pub fn execute(&self, signals: &mut Vec<Signal>) {
+impl Op {
+    pub fn execute(&self, signals: &mut Vec<Signal>, mesh: &Vec<Neuron>) {
+        let neuro = mesh.get(self.neuron_ix).unwrap();
+
         match self.operation {
-            NeuronOperation::Forward => self.neuron.forward(signals, self.target),
+            NeuronOperation::Forward => neuro.forward(signals, self.signal_ix),
             NeuronOperation::Merge => {
-                self.neuron.merge(signals, self.target);
-                self.neuron.forward(signals, self.target);
+                neuro.merge(signals, self.signal_ix);
+                neuro.forward(signals, self.signal_ix);
             }
             NeuronOperation::Split => {
-                self.neuron.split(signals, self.target);
-                self.neuron.forward(signals, self.target);
+                neuro.split(signals, self.signal_ix);
+                neuro.forward(signals, self.signal_ix);
             }
         }
     }
 }
 
-pub struct Manifold<'a> {
+pub struct Manifold {
     input: usize,
-    reach: usize,
+    reaches: Vec<usize>,
+    reach_points: Vec<usize>,
     output: usize,
-    neurons: &'a Vec<Neuron>,
-    web: Vec<Vec<Op<'a>>>,
+    mesh_len: usize,
+    web: Vec<Vec<Op>>,
+    _noise: f32,
 }
 
-impl Manifold<'_> {
-    pub fn new<'a>(
-        input: usize,
-        output: usize,
-        reach: usize,
-        neurons: &'a Vec<Neuron>,
-    ) -> Manifold<'a> {
+impl Manifold {
+    pub fn new<'a>(input: usize, output: usize, reaches: Vec<usize>, mesh_len: usize) -> Manifold {
         Manifold {
             input,
-            reach,
+            reaches,
+            reach_points: vec![],
             output,
-            neurons,
+            mesh_len,
             web: vec![],
+            _noise: 0.,
         }
     }
 
-    pub fn weave_between<'a>(&'a mut self, s: usize, e: usize) {
+    pub fn _with_noise(&mut self, n: f32) {
+        self._noise = n;
+    }
+
+    pub fn weave_between<'a>(&'a mut self, s: usize, e: usize) -> Vec<Vec<Op>> {
         let descend = s > e;
         let mut c = s;
 
@@ -68,30 +73,30 @@ impl Manifold<'_> {
                 false => c,
             };
 
-            for target in 0..cutoff {
-                let neuron = self.neurons.choose(&mut rng).unwrap();
+            for signal_ix in 0..cutoff {
+                let neuron_ix = rng.gen_range(0..self.mesh_len);
 
-                let op: Op = match (descend, target == cross) {
+                let op: Op = match (descend, signal_ix == cross) {
                     (true, true) => {
                         next_c -= 1;
                         Op {
-                            neuron,
                             operation: NeuronOperation::Merge,
-                            target,
+                            neuron_ix,
+                            signal_ix,
                         }
                     }
                     (false, true) => {
                         next_c += 1;
                         Op {
-                            neuron,
                             operation: NeuronOperation::Split,
-                            target,
+                            neuron_ix,
+                            signal_ix,
                         }
                     }
                     (_, false) => Op {
-                        neuron,
                         operation: NeuronOperation::Forward,
-                        target,
+                        neuron_ix,
+                        signal_ix,
                     },
                 };
 
@@ -102,17 +107,57 @@ impl Manifold<'_> {
             weave.push(ops)
         }
 
-        self.web.append(&mut weave);
+        return weave;
     }
 
-    pub fn weave<'a>(&'a mut self) {
-        let steps = vec![self.input, self.reach, self.output];
+    pub fn weave(&mut self) {
+        let steps = vec![vec![self.input], self.reaches.clone(), vec![self.output]].concat();
         for i in 0..(steps.len() - 1) {
-            self.weave_between(steps[i], steps[i + 1]);
+            let mut weave = self.weave_between(steps[i], steps[i + 1]);
+            self.web.append(&mut weave);
+            self.reach_points.push(self.web.len())
         }
     }
 
-    pub fn forward(&self, signals: &mut Vec<Signal>) {
+    pub fn reweave_backtrack(&mut self, backtrack: usize) -> Manifold {
+        let op_ix = self.web.len() - backtrack;
+        let backtrack_op = self.web.get(op_ix).unwrap();
+        let weave_start_size = backtrack_op.len();
+
+        let mut next_reach_ix = 0;
+        for (i, reach_pt) in self.reach_points.iter().enumerate() {
+            if *reach_pt >= op_ix {
+                next_reach_ix = i;
+            }
+        }
+
+        let from_backtrack_to_end: Vec<usize> = self.reaches[next_reach_ix..].to_vec();
+        let steps = vec![vec![weave_start_size], from_backtrack_to_end].concat();
+
+        let new_web = self.web.clone();
+        let mut split_web = new_web[0..op_ix].to_vec();
+
+        let new_reach_points = self.reach_points.clone();
+        let mut split_reach_points = new_reach_points[0..next_reach_ix].to_vec();
+
+        for i in 0..(steps.len() - 1) {
+            let mut weave = self.weave_between(steps[i], steps[i + 1]);
+            split_web.append(&mut weave);
+            split_reach_points.push(split_web.len());
+        }
+
+        Manifold {
+            input: self.input.clone(),
+            output: self.output.clone(),
+            mesh_len: self.mesh_len.clone(),
+            reaches: self.reaches.clone(),
+            reach_points: split_reach_points,
+            web: split_web,
+            _noise: 0.,
+        }
+    }
+
+    pub fn forward(&self, signals: &mut Vec<Signal>, neuros: &Vec<Neuron>) {
         if signals.len() != self.input {
             println!("Length mismatch");
             return;
@@ -120,8 +165,48 @@ impl Manifold<'_> {
 
         for stage in self.web.iter() {
             for op in stage.iter() {
-                op.execute(signals)
+                op.execute(signals, neuros)
             }
         }
+    }
+
+    pub fn sequence(&self) -> String {
+        let mut seq_slices: Vec<Vec<String>> = Vec::new();
+        let mut seq = String::default();
+
+        let mut max_x = 0;
+        let max_y = self.web.len();
+
+        for opl in self.web.iter() {
+            if opl.len() > max_x {
+                max_x = opl.len()
+            }
+
+            let op_sequence = opl
+                .iter()
+                .map(|op| match op.operation {
+                    NeuronOperation::Forward => format!("F"),
+                    NeuronOperation::Merge => format!("M"),
+                    NeuronOperation::Split => format!("S"),
+                })
+                .collect::<Vec<String>>();
+
+            seq_slices.push(op_sequence)
+        }
+
+        for x in 0..max_x {
+            for y in 0..max_y {
+                match seq_slices.get(y) {
+                    Some(yv) => match yv.get(x) {
+                        Some(v) => seq.push_str(v),
+                        None => seq.push(' '),
+                    },
+                    None => seq.push(' '),
+                }
+            }
+            seq.push('\n');
+        }
+
+        seq
     }
 }

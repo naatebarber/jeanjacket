@@ -22,13 +22,18 @@ fn main() {
     // Stretch to max, and shrink to min in least number of steps possible
     // Swap neurons in path
 
-    let neuros = make_neurons(100);
-    let mut manifold = Manifold::new(4, 2, 30, &neuros);
+    let mesh_len: usize = 100;
+
+    let mut manifold = Manifold::new(4, 2, vec![12, 2, 12], mesh_len);
     manifold.weave();
+
+    let neuros = make_neurons(mesh_len);
 
     let mut test_signals = Signal::random_normal(4);
     println!("{:?}", test_signals);
 
-    manifold.forward(&mut test_signals);
+    manifold.forward(&mut test_signals, &neuros);
     println!("{:?}", test_signals);
+
+    println!("{}", manifold.sequence())
 }

@@ -6,7 +6,7 @@ pub struct Signal {
 }
 
 impl Signal {
-    pub fn random_normal(size: usize) -> Vec<Signal> {
+    pub fn _random_normal(size: usize) -> Vec<Signal> {
         let mut signals = vec![];
         let mut rng = rand::thread_rng();
 

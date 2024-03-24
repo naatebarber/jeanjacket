@@ -16,7 +16,7 @@ fn _about() {
 
     let neuros = Neuron::substrate(mesh_len);
 
-    let mut test_signals = Signal::random_normal(2);
+    let mut test_signals = Signal::_random_normal(2);
     // println!("{:?}", test_signals);
 
     manifold.forward(&mut test_signals, &neuros);

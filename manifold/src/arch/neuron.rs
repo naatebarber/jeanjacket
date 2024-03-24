@@ -3,7 +3,7 @@ use super::Signal;
 use rand::prelude::*;
 use rand::thread_rng;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum NeuronOperation {
     Split,
     Merge,
@@ -32,6 +32,14 @@ impl Neuron {
         }
     }
 
+    pub fn substrate(size: usize) -> Vec<Neuron> {
+        let mut neurons: Vec<Neuron> = vec![];
+        for _ in 0..=size {
+            neurons.push(Neuron::random_normal())
+        }
+        neurons
+    }
+
     pub fn activation(&self, x: f64) -> f64 {
         match self.a {
             ActivationType::Relu => Activation::relu(x),
@@ -40,10 +48,15 @@ impl Neuron {
         }
     }
 
-    pub fn forward(&self, signals: &mut Vec<Signal>, target: usize) {
+    pub fn forward(&self, signals: &mut Vec<Signal>, target: usize, discount: f64) {
         let signal = signals.get_mut(target).unwrap();
-        signal.x *= self.w;
-        signal.x += self.b;
+        let mut after = signal.x.clone();
+        after *= self.w;
+        after += self.b;
+        let mut diff = after - signal.x;
+        diff *= discount;
+
+        signal.x += diff;
         signal.x = self.activation(signal.x);
     }
 

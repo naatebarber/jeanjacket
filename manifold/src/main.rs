@@ -1,39 +1,59 @@
 mod arch;
 
+use arch::constant_fold::ConstantFold;
 use arch::Manifold;
 use arch::Neuron;
 use arch::Signal;
 
-fn make_neurons(size: usize) -> Vec<Neuron> {
-    let mut neurons: Vec<Neuron> = vec![];
-    for _ in 0..=size {
-        neurons.push(Neuron::random_normal())
-    }
-    neurons
+use rand::thread_rng;
+use rand::Rng;
+
+fn _about() {
+    let mesh_len: usize = 100;
+
+    let mut manifold = Manifold::new(2, 3, vec![12, 2, 8, 4, 14, 6, 12], mesh_len);
+    manifold.weave();
+
+    let neuros = Neuron::substrate(mesh_len);
+
+    let mut test_signals = Signal::random_normal(2);
+    // println!("{:?}", test_signals);
+
+    manifold.forward(&mut test_signals, &neuros);
+    // println!("{:?}", test_signals);
+
+    println!("Goal: Light = survival. Learn to seek light.\n");
+    println!("Input signals: \n1. Light sensor input\n2. Previous light sensor input\n");
+    println!("Output signals: \n1. Rotate left\n2. Rotate right\n3. Move forward\n");
+
+    println!("Each neuron performs a mathematical operation on a signal, \npathways through neurons are evolved based on success of the resulting answer.\n");
+    println!("There are 1,000,000 neurons with pre-set influence. \nCurrently the influence of a neuron does not change, the pathway does.");
+    println!("This might be hella gay and inefficient because it's like a brain with no cell death or growth.\n");
+    println!("F => Push signal from neuron A to neuron B");
+    println!("M => Merge signals from neuron A and neuron B into neuron C");
+    println!("S => Split signals from neuron A into neurons B and C");
+
+    println!("\nEvolved thought pathway through arbitrary neurons:\n");
+
+    println!("{}", manifold._sequence())
 }
 
 fn main() {
-    // Use a-star search algorithm or something to weave a manifold / pathway for signals to travel
-    // Manifold must meet certain criterium, such as:
-    // Min hidden signals - at some point in the manifold, there must be N signals
-    // Output signals = output size
-    // Do this by stretching and shrinking num signals through neurons
+    let neuros = Neuron::substrate(100000);
 
-    // Stretch to max, and shrink to min in least number of steps possible
-    // Swap neurons in path
+    let heuristic = |x: &f64| x.powi(2);
+    let mut x: Vec<Vec<f64>> = vec![];
+    let mut y: Vec<Vec<f64>> = vec![];
+    let dssize = 10000;
+    let mut rng = thread_rng();
 
-    let mesh_len: usize = 100;
+    for _ in 0..dssize {
+        let i: f64 = rng.gen();
+        let o = heuristic(&i);
+        x.push(vec![i]);
+        y.push(vec![o]);
+    }
 
-    let mut manifold = Manifold::new(4, 2, vec![12, 2, 12], mesh_len);
-    manifold.weave();
-
-    let neuros = make_neurons(mesh_len);
-
-    let mut test_signals = Signal::random_normal(4);
-    println!("{:?}", test_signals);
-
-    manifold.forward(&mut test_signals, &neuros);
-    println!("{:?}", test_signals);
-
-    println!("{}", manifold.sequence())
+    let cf = ConstantFold::new(1, 1, vec![10, 5, 10, 5, 10, 100, 10, 5, 10, 5]);
+    cf.optimize_traversal(neuros, x, y)
 }

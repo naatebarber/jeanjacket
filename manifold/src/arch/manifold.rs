@@ -10,18 +10,18 @@ pub struct Op {
 }
 
 impl Op {
-    pub fn execute(&self, signals: &mut Vec<Signal>, mesh: &Vec<Neuron>) {
+    pub fn execute(&self, signals: &mut Vec<Signal>, mesh: &Vec<Neuron>, discount: f64) {
         let neuro = mesh.get(self.neuron_ix).unwrap();
 
         match self.operation {
-            NeuronOperation::Forward => neuro.forward(signals, self.signal_ix),
+            NeuronOperation::Forward => neuro.forward(signals, self.signal_ix, discount),
             NeuronOperation::Merge => {
                 neuro.merge(signals, self.signal_ix);
-                neuro.forward(signals, self.signal_ix);
+                neuro.forward(signals, self.signal_ix, discount);
             }
             NeuronOperation::Split => {
                 neuro.split(signals, self.signal_ix);
-                neuro.forward(signals, self.signal_ix);
+                neuro.forward(signals, self.signal_ix, discount);
             }
         }
     }
@@ -34,7 +34,7 @@ pub struct Manifold {
     output: usize,
     mesh_len: usize,
     web: Vec<Vec<Op>>,
-    _noise: f32,
+    pub loss: f64,
 }
 
 impl Manifold {
@@ -46,12 +46,8 @@ impl Manifold {
             output,
             mesh_len,
             web: vec![],
-            _noise: 0.,
+            loss: 0.,
         }
-    }
-
-    pub fn _with_noise(&mut self, n: f32) {
-        self._noise = n;
     }
 
     pub fn weave_between<'a>(&'a mut self, s: usize, e: usize) -> Vec<Vec<Op>> {
@@ -117,10 +113,11 @@ impl Manifold {
             self.web.append(&mut weave);
             self.reach_points.push(self.web.len())
         }
+        self.reach_points.sort();
     }
 
     pub fn reweave_backtrack(&mut self, backtrack: usize) -> Manifold {
-        let op_ix = self.web.len() - backtrack;
+        let op_ix = 1 + backtrack;
         let backtrack_op = self.web.get(op_ix).unwrap();
         let weave_start_size = backtrack_op.len();
 
@@ -128,6 +125,7 @@ impl Manifold {
         for (i, reach_pt) in self.reach_points.iter().enumerate() {
             if *reach_pt >= op_ix {
                 next_reach_ix = i;
+                break;
             }
         }
 
@@ -146,6 +144,8 @@ impl Manifold {
             split_reach_points.push(split_web.len());
         }
 
+        split_reach_points.sort();
+
         Manifold {
             input: self.input.clone(),
             output: self.output.clone(),
@@ -153,8 +153,17 @@ impl Manifold {
             reaches: self.reaches.clone(),
             reach_points: split_reach_points,
             web: split_web,
-            _noise: 0.,
+            loss: 0.,
         }
+    }
+
+    pub fn discount_factor(&self) -> f64 {
+        let layers = self.web.len();
+        -(0.5 / (layers + 1) as f64) + 1.
+    }
+
+    pub fn discount(&self, web_layer: usize, factor: f64) -> f64 {
+        factor.powi(web_layer as i32)
     }
 
     pub fn forward(&self, signals: &mut Vec<Signal>, neuros: &Vec<Neuron>) {
@@ -163,14 +172,25 @@ impl Manifold {
             return;
         }
 
-        for stage in self.web.iter() {
+        let discount_factor = self.discount_factor();
+
+        for (layer, stage) in self.web.iter().enumerate() {
             for op in stage.iter() {
-                op.execute(signals, neuros)
+                let discount = self.discount(layer, discount_factor);
+                op.execute(signals, neuros, discount)
             }
         }
     }
 
-    pub fn sequence(&self) -> String {
+    pub fn get_num_layers(&self) -> usize {
+        self.web.len()
+    }
+
+    pub fn accumulate_loss(&mut self, a: f64) {
+        self.loss += a;
+    }
+
+    pub fn _sequence(&self) -> String {
         let mut seq_slices: Vec<Vec<String>> = Vec::new();
         let mut seq = String::default();
 

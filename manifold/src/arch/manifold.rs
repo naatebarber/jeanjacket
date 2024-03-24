@@ -25,6 +25,10 @@ impl Op {
             }
         }
     }
+
+    pub fn swap_focus(&mut self, neuron_ix: usize) {
+        self.neuron_ix = neuron_ix;
+    }
 }
 
 pub struct Manifold {
@@ -116,6 +120,8 @@ impl Manifold {
         self.reach_points.sort();
     }
 
+    /// Reweaves the Manifold starting from a point backtrack
+    /// Returns a new Manifold instance
     pub fn reweave_backtrack(&mut self, backtrack: usize) -> Manifold {
         let op_ix = 1 + backtrack;
         let backtrack_op = self.web.get(op_ix).unwrap();
@@ -154,6 +160,44 @@ impl Manifold {
             reach_points: split_reach_points,
             web: split_web,
             loss: 0.,
+        }
+    }
+
+    /// Does a random sample of neurons for an existing layer of the Manifold
+    /// Updates the current manifold in place
+    pub fn hotswap_layer(&mut self, backtrack: usize) -> &mut Self {
+        let opl = self.web.get_mut(backtrack);
+        match opl {
+            Some(layer) => {
+                let mut rng = thread_rng();
+
+                for op in layer.iter_mut() {
+                    let nix = rng.gen_range(0..self.mesh_len);
+                    op.swap_focus(nix)
+                }
+
+                self
+            }
+            None => self,
+        }
+    }
+
+    /// Does a random sample of neurons for a single layer operation of a Manifold
+    /// Updates the existing manifold in place
+    pub fn hotswap_single(&mut self, backtrack: usize) -> &mut Self {
+        let opl = self.web.get_mut(backtrack);
+        match opl {
+            Some(layer) => {
+                let mut rng = thread_rng();
+                let ix = rng.gen_range(0..layer.len());
+                let nix = rng.gen_range(0..self.mesh_len);
+
+                let op = layer.get_mut(ix).unwrap();
+                op.swap_focus(nix);
+
+                self
+            }
+            None => self,
         }
     }
 

@@ -1,5 +1,7 @@
 mod arch;
 
+use std::sync::Arc;
+
 use arch::constant_fold::ConstantFold;
 use arch::Manifold;
 use arch::Neuron;
@@ -41,7 +43,7 @@ fn _about() {
 fn main() {
     let neuros = Neuron::substrate(100000);
 
-    let heuristic = |x: &f64| x.powi(2);
+    let heuristic = |x: &f64| x.powi(3) + x.powi(2) + 4.;
     let mut x: Vec<Vec<f64>> = vec![];
     let mut y: Vec<Vec<f64>> = vec![];
     let dssize = 10000;
@@ -54,6 +56,7 @@ fn main() {
         y.push(vec![o]);
     }
 
-    let cf = ConstantFold::new(1, 1, vec![10, 5, 10, 5, 10, 100, 10, 5, 10, 5]);
-    cf.optimize_traversal(neuros, x, y)
+    let cf = ConstantFold::new(1, 1, vec![10, 5, 10, 111, 100, 10, 5]);
+    let shareable_neuros = Arc::new(neuros);
+    cf.optimize_traversal(shareable_neuros, x, y)
 }

@@ -1,4 +1,7 @@
-use std::collections::VecDeque;
+use std::ops::Deref;
+use std::sync::{Arc, Mutex};
+use std::thread::{self, available_parallelism};
+use std::{collections::VecDeque, thread::JoinHandle};
 
 use rand::{thread_rng, Rng};
 
@@ -8,11 +11,18 @@ pub struct ConstantFold {
     d_in: usize,
     d_out: usize,
     reach: Vec<usize>,
+    cores: usize,
 }
 
 impl ConstantFold {
     pub fn new(d_in: usize, d_out: usize, reach: Vec<usize>) -> ConstantFold {
-        ConstantFold { d_in, d_out, reach }
+        let cores: usize = available_parallelism().unwrap().into();
+        ConstantFold {
+            d_in,
+            d_out,
+            reach,
+            cores,
+        }
     }
 
     pub fn vectorize(signals: &[Signal]) -> Vec<f64> {
@@ -39,23 +49,24 @@ impl ConstantFold {
 
     pub fn population(
         &self,
-        mut from_backtrack: Option<(Manifold, &usize)>,
+        mut from_backtrack: Option<(Arc<Mutex<Manifold>>, &usize)>,
         neuros: &Vec<Neuron>,
         count: usize,
-    ) -> VecDeque<Manifold> {
-        let mut p: VecDeque<Manifold> = VecDeque::new();
+    ) -> VecDeque<Arc<Mutex<Manifold>>> {
+        let mut p: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
 
         for _ in 0..count {
             match &mut from_backtrack {
                 Some((manifold, backtrack)) => {
-                    let child = manifold.reweave_backtrack(backtrack.clone());
-                    p.push_back(child)
+                    let mut parent = manifold.lock().unwrap();
+                    let child = parent.reweave_backtrack(backtrack.clone());
+                    p.push_back(Arc::new(Mutex::new(child)))
                 }
                 None => {
                     let mut organic =
                         Manifold::new(self.d_in, self.d_out, self.reach.clone(), neuros.len());
                     organic.weave();
-                    p.push_back(organic)
+                    p.push_back(Arc::new(Mutex::new(organic)))
                 }
             }
         }
@@ -63,7 +74,30 @@ impl ConstantFold {
         p
     }
 
-    pub fn optimize_traversal(&self, neuros: Vec<Neuron>, x: Vec<Vec<f64>>, y: Vec<Vec<f64>>) {
+    pub fn evaluate_one(
+        manifold_am: Arc<Mutex<Manifold>>,
+        sample_x: Vec<Vec<f64>>,
+        sample_y: Vec<Vec<f64>>,
+        neuros: Arc<Vec<Neuron>>,
+    ) -> JoinHandle<()> {
+        let hand = thread::spawn(move || {
+            let mut manifold = manifold_am.lock().unwrap();
+
+            sample_x
+                .into_iter()
+                .map(|x| ConstantFold::signalize(&x))
+                .enumerate()
+                .for_each(|(i, mut x)| {
+                    manifold.forward(&mut x, neuros.deref());
+                    let loss = ConstantFold::mse(&mut x, &sample_y[i]);
+                    manifold.accumulate_loss(loss)
+                });
+        });
+
+        hand
+    }
+
+    pub fn optimize_traversal(&self, neuros: Arc<Vec<Neuron>>, x: Vec<Vec<f64>>, y: Vec<Vec<f64>>) {
         let mut rng = thread_rng();
         let set_length = x.len();
 
@@ -76,42 +110,54 @@ impl ConstantFold {
         // successful members. Do we just do an even split or is it based on performance?
         // For now an even split.
 
-        let mut population: VecDeque<Manifold> = self.population(None, &neuros, population_size);
+        let mut population: VecDeque<Arc<Mutex<Manifold>>> =
+            self.population(None, &neuros, population_size);
         let max_layers = population.iter().fold(0, |a, m| {
-            let l = m.get_num_layers();
+            let l = m.lock().unwrap().get_num_layers();
             if l > a {
                 return l;
             }
             a
         });
 
+        // First training pass. bring everything down to a certain threshold of loss.
+
         for backtrack in 0..max_layers - 1 {
-            let mut sample_x: Vec<&Vec<f64>> = vec![];
+            let mut sample_x: Vec<Vec<f64>> = vec![];
             let mut sample_y: Vec<Vec<f64>> = vec![];
 
             for _ in 0..samples_per_epoch {
                 let xy_ix = rng.gen_range(0..set_length);
-                sample_x.push(&x[xy_ix]);
+                sample_x.push(x[xy_ix].clone());
                 sample_y.push(y[xy_ix].clone());
             }
 
-            for manifold in population.iter_mut() {
-                for (i, x) in sample_x.iter_mut().enumerate() {
-                    let mut signals = &mut ConstantFold::signalize(x);
-                    manifold.forward(&mut signals, &neuros);
-                    let loss = ConstantFold::mse(&signals, &sample_y[i]);
-                    manifold.accumulate_loss(loss)
-                }
+            let handles = population
+                .iter()
+                .map(|m| {
+                    ConstantFold::evaluate_one(
+                        Arc::clone(m),
+                        sample_x.clone(),
+                        sample_y.clone(),
+                        Arc::clone(&neuros),
+                    )
+                })
+                .collect::<Vec<JoinHandle<()>>>();
+
+            for h in handles {
+                h.join();
             }
 
-            population
-                .make_contiguous()
-                .sort_unstable_by(|m, n| m.loss.partial_cmp(&n.loss).unwrap());
+            population.make_contiguous().sort_unstable_by(|m, n| {
+                let m = m.lock().unwrap();
+                let n = n.lock().unwrap();
+                m.loss.partial_cmp(&n.loss).unwrap()
+            });
 
-            println!("Min loss: {}", population[0].loss);
+            println!("Min loss: {}", population[0].lock().unwrap().loss);
 
             // Carry over the elite
-            let mut elite: VecDeque<Manifold> = VecDeque::new();
+            let mut elite: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
             for _ in 0..elitism_carryover {
                 let m = population.pop_front();
                 if let Some(m) = m {
@@ -119,7 +165,7 @@ impl ConstantFold {
                 }
             }
 
-            let mut carryover: VecDeque<Manifold> = VecDeque::new();
+            let mut carryover: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
             let num_carryover = (carryover_rate * population_size as f64).floor() as usize;
             for _ in 0..num_carryover {
                 let m = population.pop_front();
@@ -131,12 +177,15 @@ impl ConstantFold {
             // Append the carryover manifolds that can no longer evolve to elite
             // If inviable, they will wash out.
             // Evolve the rest
-            let mut evolvable: VecDeque<Manifold> = VecDeque::new();
+            let mut evolvable: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
             for m in carryover.into_iter() {
-                if m.get_num_layers() < backtrack + 1 {
+                let manifold = m.lock().unwrap();
+                if manifold.get_num_layers() < backtrack + 1 {
+                    drop(manifold);
                     elite.push_back(m);
                     continue;
                 }
+                drop(manifold);
                 evolvable.push_back(m);
             }
 
@@ -154,7 +203,7 @@ impl ConstantFold {
                 parent_selector = i % num_evolvable;
             }
 
-            let mut next_population: VecDeque<Manifold> = VecDeque::new();
+            let mut next_population: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
             for (i, b) in evolvable.into_iter().enumerate() {
                 next_population.append(&mut self.population(
                     Some((b, &backtrack)),

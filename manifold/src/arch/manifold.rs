@@ -26,12 +26,12 @@ impl Op {
         }
     }
 
-    pub fn swap_focus(&mut self, neuron_ix: usize) {
+    pub fn _swap_focus(&mut self, neuron_ix: usize) {
         self.neuron_ix = neuron_ix;
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Manifold {
     input: usize,
     reaches: Vec<usize>,
@@ -174,7 +174,7 @@ impl Manifold {
 
         for op in layer.iter_mut() {
             let nix = rng.gen_range(0..self.mesh_len);
-            op.swap_focus(nix)
+            op._swap_focus(nix)
         }
 
         Manifold {
@@ -190,7 +190,7 @@ impl Manifold {
 
     /// Does a random sample of neurons for a single layer operation of a Manifold
     /// Updates the existing manifold in place
-    pub fn hotswap_single(&mut self, backtrack: usize) -> Manifold {
+    pub fn _hotswap_single(&mut self, backtrack: usize) -> Manifold {
         let mut web = self.web.clone();
         let layer = web.get_mut(backtrack).unwrap();
 
@@ -199,7 +199,7 @@ impl Manifold {
         let nix = rng.gen_range(0..self.mesh_len);
 
         let op = layer.get_mut(ix).unwrap();
-        op.swap_focus(nix);
+        op._swap_focus(nix);
 
         Manifold {
             input: self.input,

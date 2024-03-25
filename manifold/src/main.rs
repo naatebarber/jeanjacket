@@ -59,7 +59,7 @@ fn main() {
 
     let cf = ConstantFold::new(1, 1, vec![10, 5, 10, 5, 10, 10, 5]);
 
-    let (population, basis, hyper) = cf.optimize_traversal(
+    let _ = cf.optimize_traversal(
         Basis {
             neuros: Arc::new(neuros),
             x,
@@ -72,6 +72,4 @@ fn main() {
             sample_size: 40,
         },
     );
-
-    cf.constant_mutate(population, basis, hyper, 1000);
 }

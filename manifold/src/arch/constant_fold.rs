@@ -92,17 +92,35 @@ impl ConstantFold {
     }
 
     pub fn weave_population(
-        &self,
-        neuros: &Vec<Neuron>,
+        reach: Vec<usize>,
+        d_in: usize,
+        d_out: usize,
+        neurons: usize,
         count: usize,
     ) -> VecDeque<Arc<Mutex<Manifold>>> {
         let mut p: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
 
+        let mut weave_tasks: Vec<Box<dyn (FnOnce() -> Arc<Mutex<Manifold>>) + Send>> = vec![];
+
         for _ in 0..count {
-            let mut organic =
-                Manifold::new(self.d_in, self.d_out, self.reach.clone(), neuros.len());
-            organic.weave();
-            p.push_back(Arc::new(Mutex::new(organic)))
+            let d_inc = d_in.clone();
+            let d_outc = d_out.clone();
+            let nc = neurons.clone();
+            let reachc = reach.clone();
+
+            let task = Box::new(move || {
+                let mut organic = Manifold::new(d_inc, d_outc, reachc, nc);
+                organic.weave();
+                Arc::new(Mutex::new(organic))
+            }) as Box<dyn (FnOnce() -> Arc<Mutex<Manifold>>) + Send>;
+
+            weave_tasks.push(task);
+        }
+
+        let woven_manifolds = ConstantFold::distributed::<Arc<Mutex<Manifold>>>(weave_tasks);
+
+        for m in woven_manifolds.into_iter() {
+            p.push_back(m)
         }
 
         p
@@ -118,6 +136,22 @@ impl ConstantFold {
         for _ in 0..count {
             let mut parent = from.lock().unwrap();
             let child = parent.reweave_backtrack(backtrack.clone());
+            p.push_back(Arc::new(Mutex::new(child)));
+        }
+
+        p
+    }
+
+    pub fn reweave_population_sequential(
+        from: Arc<Mutex<Manifold>>,
+        backtrack: usize,
+        count: usize,
+    ) -> VecDeque<Arc<Mutex<Manifold>>> {
+        let mut p: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+
+        for _ in 0..count {
+            let mut parent = from.lock().unwrap();
+            let child = parent.reweave_layer(backtrack.clone());
             p.push_back(Arc::new(Mutex::new(child)));
         }
 
@@ -190,10 +224,13 @@ impl ConstantFold {
             ..
         } = hyper;
 
-        let mut population: VecDeque<Arc<Mutex<Manifold>>> =
-            self.weave_population(&neuros, population_size);
-
-        println!("{}", population.len());
+        let mut population: VecDeque<Arc<Mutex<Manifold>>> = ConstantFold::weave_population(
+            self.reach.clone(),
+            self.d_in,
+            self.d_out,
+            neuros.len(),
+            population_size,
+        );
 
         let max_layers = population.iter().fold(0, |a, m| {
             let l = m.lock().unwrap().get_num_layers();
@@ -272,6 +309,124 @@ impl ConstantFold {
                     let bt = backtrack.clone();
 
                     Box::new(move || ConstantFold::reweave_population(m, bt, count))
+                        as Box<dyn (FnOnce() -> PopulationSlice) + Send>
+                })
+                .collect::<Vec<_>>();
+
+            let population_slices =
+                ConstantFold::distributed::<PopulationSlice>(create_population_tasks);
+
+            for mut slice in population_slices.into_iter() {
+                next_population.append(&mut slice)
+            }
+
+            population = next_population;
+        }
+
+        return (population, basis, hyper);
+    }
+
+    /// Brute evolution of a pathway over a neuron mesh, not continuous. One pass.
+    pub fn optimize_sequential(
+        &self,
+        basis: Basis,
+        hyper: Hyper,
+    ) -> (VecDeque<Arc<Mutex<Manifold>>>, Basis, Hyper) {
+        let Basis { neuros, .. } = basis.clone();
+        let Hyper {
+            population_size,
+            carryover_rate,
+            elitism_carryover,
+            ..
+        } = hyper;
+
+        let mut population: VecDeque<Arc<Mutex<Manifold>>> = ConstantFold::weave_population(
+            self.reach.clone(),
+            self.d_in,
+            self.d_out,
+            neuros.len(),
+            population_size,
+        );
+
+        println!("{}", population.len());
+
+        let max_layers = population.iter().fold(0, |a, m| {
+            let l = m.lock().unwrap().get_num_layers();
+            if l > a {
+                return l;
+            }
+            a
+        });
+
+        for backtrack in 0..max_layers - 1 {
+            ConstantFold::evaluate(&mut population, &basis, &hyper);
+
+            println!(
+                "Min loss (pathway sequential optim): {}",
+                population[0].lock().unwrap().loss
+            );
+
+            // Carry over the elite
+            let mut elite: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+            for _ in 0..elitism_carryover {
+                let m = population.pop_front();
+                if let Some(m) = m {
+                    elite.push_back(m)
+                }
+            }
+
+            let mut carryover: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+            let num_carryover = (carryover_rate * population_size as f64).floor() as usize;
+            for _ in 0..num_carryover {
+                let m = population.pop_front();
+                if let Some(m) = m {
+                    carryover.push_back(m)
+                }
+            }
+
+            // Append the carryover manifolds that can no longer evolve to elite
+            // If inviable, they will wash out.
+            // Evolve the rest
+            let mut evolvable: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+            for m in carryover.into_iter() {
+                let manifold = m.lock().unwrap();
+                if manifold.get_num_layers() < backtrack + 1 {
+                    drop(manifold);
+                    elite.push_back(m);
+                    continue;
+                }
+                drop(manifold);
+                evolvable.push_back(m);
+            }
+
+            let num_evolvable = evolvable.len();
+
+            if num_evolvable == 0 {
+                break;
+            }
+
+            let mut children_per: Vec<usize> = evolvable.iter().map(|_| 0).collect();
+
+            let mut parent_selector = 0;
+            for i in 0..=(population_size - elite.len()) {
+                children_per[parent_selector] += 1;
+                parent_selector = i % num_evolvable;
+            }
+
+            let mut next_population: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+            next_population.append(&mut elite);
+
+            type PopulationSlice = VecDeque<Arc<Mutex<Manifold>>>;
+
+            let create_population_tasks = evolvable
+                .into_iter()
+                .enumerate()
+                .map(|(i, manifold)| {
+                    let m = Arc::clone(&manifold);
+                    let count = children_per[i];
+                    let bt = backtrack.clone();
+
+                    Box::new(move || ConstantFold::reweave_population_sequential(m, bt, count))
                         as Box<dyn (FnOnce() -> PopulationSlice) + Send>
                 })
                 .collect::<Vec<_>>();

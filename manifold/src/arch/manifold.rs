@@ -26,8 +26,12 @@ impl Op {
         }
     }
 
-    pub fn _swap_focus(&mut self, neuron_ix: usize) {
+    pub fn swap_focus(&mut self, neuron_ix: usize) {
         self.neuron_ix = neuron_ix;
+    }
+
+    pub fn swap_op(&mut self, neuron_op: NeuronOperation) {
+        self.operation = neuron_op;
     }
 }
 
@@ -164,6 +168,45 @@ impl Manifold {
         }
     }
 
+    pub fn reweave_layer(&mut self, layer_ix: usize) -> Manifold {
+        let mut web = self.web.clone();
+        let layer = web.get_mut(layer_ix).unwrap();
+        let mut neur_rng = thread_rng();
+        let mut cross_rng = thread_rng();
+
+        let mut pick_neuron = || neur_rng.gen_range(0..self.mesh_len) as usize;
+        let mut pick_cross = || cross_rng.gen_range(0..layer.len()) as usize;
+
+        let cross = pick_cross();
+
+        let mover_op = layer
+            .iter()
+            .fold(NeuronOperation::Forward, |nop, op| match op.operation {
+                NeuronOperation::Forward => return nop,
+                NeuronOperation::Merge | NeuronOperation::Split => return op.operation.clone(),
+            });
+
+        for (i, op) in layer.iter_mut().enumerate() {
+            if i == cross {
+                op.swap_focus(pick_neuron());
+                op.swap_op(mover_op.clone())
+            } else {
+                op.swap_focus(pick_neuron());
+                op.swap_op(NeuronOperation::Forward)
+            }
+        }
+
+        Manifold {
+            reaches: self.reaches.clone(),
+            reach_points: self.reach_points.clone(),
+            web,
+            mesh_len: self.mesh_len.clone(),
+            input: self.input.clone(),
+            output: self.output.clone(),
+            loss: 0.,
+        }
+    }
+
     /// Does a random sample of neurons for an existing layer of the Manifold
     /// Updates the current manifold in place
     pub fn _hotswap_layer(&mut self, backtrack: usize) -> Manifold {
@@ -174,7 +217,7 @@ impl Manifold {
 
         for op in layer.iter_mut() {
             let nix = rng.gen_range(0..self.mesh_len);
-            op._swap_focus(nix)
+            op.swap_focus(nix)
         }
 
         Manifold {
@@ -199,7 +242,7 @@ impl Manifold {
         let nix = rng.gen_range(0..self.mesh_len);
 
         let op = layer.get_mut(ix).unwrap();
-        op._swap_focus(nix);
+        op.swap_focus(nix);
 
         Manifold {
             input: self.input,

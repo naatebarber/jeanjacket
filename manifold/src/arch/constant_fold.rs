@@ -215,7 +215,7 @@ impl ConstantFold {
         for backtrack in 0..max_layers - 1 {
             ConstantFold::evaluate(&mut population, &basis, &hyper);
 
-            println!("Min loss: {}", population[0].lock().unwrap().loss);
+            println!("Min loss (pathway optim): {}", population[0].lock().unwrap().loss);
 
             // Carry over the elite
             let mut elite: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
@@ -306,6 +306,8 @@ impl ConstantFold {
 
         while proceed(&epochs, &term_epochs) {
             ConstantFold::evaluate(&mut population, &basis, &hyper);
+
+            println!("Min loss (mutate optim): {}", population[0].lock().unwrap().loss);
 
             let mut elite: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
             for _ in 0..elitism_carryover {

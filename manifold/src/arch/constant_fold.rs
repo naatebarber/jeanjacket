@@ -7,22 +7,29 @@ use rand::{thread_rng, Rng};
 
 use super::{Manifold, Neuron, Signal};
 
+#[derive(Clone)]
+pub struct Basis {
+    pub neuros: Arc<Vec<Neuron>>,
+    pub x: Vec<Vec<f64>>,
+    pub y: Vec<Vec<f64>>,
+}
+
+pub struct Hyper {
+    pub population_size: usize,
+    pub carryover_rate: f64,
+    pub elitism_carryover: usize,
+    pub sample_size: usize,
+}
+
 pub struct ConstantFold {
     d_in: usize,
     d_out: usize,
     reach: Vec<usize>,
-    cores: usize,
 }
 
 impl ConstantFold {
     pub fn new(d_in: usize, d_out: usize, reach: Vec<usize>) -> ConstantFold {
-        let cores: usize = available_parallelism().unwrap().into();
-        ConstantFold {
-            d_in,
-            d_out,
-            reach,
-            cores,
-        }
+        ConstantFold { d_in, d_out, reach }
     }
 
     pub fn vectorize(signals: &[Signal]) -> Vec<f64> {
@@ -33,6 +40,31 @@ impl ConstantFold {
         x.iter()
             .map(|x| Signal { x: x.clone() })
             .collect::<Vec<Signal>>()
+    }
+
+    pub fn distributed(tasks: Vec<Box<dyn FnOnce() + Send>>) -> Vec<JoinHandle<()>> {
+        let cores: usize = available_parallelism().unwrap().into();
+        let mut batches: Vec<Vec<Box<dyn FnOnce() + Send>>> = Vec::with_capacity(cores);
+
+        for _ in 0..cores {
+            batches.push(vec![]);
+        }
+
+        for (i, task) in tasks.into_iter().enumerate() {
+            let batch = i % cores;
+            batches[batch].push(task);
+        }
+
+        batches
+            .into_iter()
+            .map(|mut batch| {
+                thread::spawn(move || {
+                    for task in batch.drain(..) {
+                        task()
+                    }
+                })
+            })
+            .collect()
     }
 
     pub fn mse(signals: &[Signal], target: &[f64]) -> f64 {
@@ -47,7 +79,7 @@ impl ConstantFold {
         diff.into_iter().fold(0. as f64, |a, e| a + e) / signals.len() as f64
     }
 
-    pub fn population(
+    pub fn weave_population(
         &self,
         mut from_backtrack: Option<(Arc<Mutex<Manifold>>, &usize)>,
         neuros: &Vec<Neuron>,
@@ -74,44 +106,104 @@ impl ConstantFold {
         p
     }
 
+    pub fn mutate_population(
+        &self,
+        manifold: Arc<Mutex<Manifold>>,
+        layer: Option<usize>,
+        count: usize,
+    ) -> VecDeque<Arc<Mutex<Manifold>>> {
+        let mut p: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+        let mut parent = manifold.lock().unwrap();
+        let mut rng = thread_rng();
+
+        let layer = match layer {
+            Some(x) => x,
+            None => rng.gen_range(0..parent.get_num_layers()),
+        };
+
+        if layer >= parent.get_num_layers() {
+            p.push_back(manifold.clone());
+            return p;
+        }
+
+        for _ in 0..count {
+            p.push_back(Arc::new(Mutex::new(parent.hotswap_single(layer))))
+        }
+
+        p
+    }
+
     pub fn evaluate_one(
         manifold_am: Arc<Mutex<Manifold>>,
         sample_x: Vec<Vec<f64>>,
         sample_y: Vec<Vec<f64>>,
         neuros: Arc<Vec<Neuron>>,
-    ) -> JoinHandle<()> {
-        let hand = thread::spawn(move || {
-            let mut manifold = manifold_am.lock().unwrap();
+    ) {
+        let mut manifold = manifold_am.lock().unwrap();
 
-            sample_x
-                .into_iter()
-                .map(|x| ConstantFold::signalize(&x))
-                .enumerate()
-                .for_each(|(i, mut x)| {
-                    manifold.forward(&mut x, neuros.deref());
-                    let loss = ConstantFold::mse(&mut x, &sample_y[i]);
-                    manifold.accumulate_loss(loss)
-                });
-        });
-
-        hand
+        sample_x
+            .into_iter()
+            .map(|x| ConstantFold::signalize(&x))
+            .enumerate()
+            .for_each(|(i, mut x)| {
+                manifold.forward(&mut x, neuros.deref());
+                let loss = ConstantFold::mse(&mut x, &sample_y[i]);
+                manifold.accumulate_loss(loss)
+            });
     }
 
-    pub fn optimize_traversal(&self, neuros: Arc<Vec<Neuron>>, x: Vec<Vec<f64>>, y: Vec<Vec<f64>>) {
+    pub fn evaluate(population: &mut VecDeque<Arc<Mutex<Manifold>>>, basis: &Basis, hyper: &Hyper) {
         let mut rng = thread_rng();
-        let set_length = x.len();
+        let set_length = basis.x.len();
+        let mut sample_x: Vec<Vec<f64>> = vec![];
+        let mut sample_y: Vec<Vec<f64>> = vec![];
 
-        let population_size = 100;
-        let carryover_rate = 0.1;
-        let elitism_carryover = 3;
-        let samples_per_epoch = 40;
+        for _ in 0..hyper.sample_size {
+            let xy_ix = rng.gen_range(0..set_length);
+            sample_x.push(basis.x[xy_ix].clone());
+            sample_y.push(basis.y[xy_ix].clone());
+        }
 
-        // Also, maybe a hyperparam for splitting new populations based on prev gens
-        // successful members. Do we just do an even split or is it based on performance?
-        // For now an even split.
+        let tasks = population
+            .iter()
+            .map(|m| {
+                let sx = sample_x.clone();
+                let sy = sample_y.clone();
+                let neuros = Arc::clone(&basis.neuros);
+                let manifold = Arc::clone(&m);
+                Box::new(move || ConstantFold::evaluate_one(manifold, sx, sy, neuros))
+                    as Box<dyn FnOnce() + Send>
+            })
+            .collect::<Vec<Box<dyn FnOnce() + Send>>>();
+
+        let handles = ConstantFold::distributed(tasks);
+        for h in handles.into_iter() {
+            h.join().ok();
+        }
+
+        population.make_contiguous().sort_unstable_by(|m, n| {
+            let m = m.lock().unwrap();
+            let n = n.lock().unwrap();
+            m.loss.partial_cmp(&n.loss).unwrap()
+        });
+    }
+
+    /// Brute evolution of a pathway over a neuron mesh, not continuous. One pass.
+    pub fn optimize_traversal(
+        &self,
+        basis: Basis,
+        hyper: Hyper,
+    ) -> (VecDeque<Arc<Mutex<Manifold>>>, Basis, Hyper) {
+        let Basis { neuros, .. } = basis.clone();
+        let Hyper {
+            population_size,
+            carryover_rate,
+            elitism_carryover,
+            ..
+        } = hyper;
 
         let mut population: VecDeque<Arc<Mutex<Manifold>>> =
-            self.population(None, &neuros, population_size);
+            self.weave_population(None, &neuros, population_size);
         let max_layers = population.iter().fold(0, |a, m| {
             let l = m.lock().unwrap().get_num_layers();
             if l > a {
@@ -120,39 +212,8 @@ impl ConstantFold {
             a
         });
 
-        // First training pass. bring everything down to a certain threshold of loss.
-
         for backtrack in 0..max_layers - 1 {
-            let mut sample_x: Vec<Vec<f64>> = vec![];
-            let mut sample_y: Vec<Vec<f64>> = vec![];
-
-            for _ in 0..samples_per_epoch {
-                let xy_ix = rng.gen_range(0..set_length);
-                sample_x.push(x[xy_ix].clone());
-                sample_y.push(y[xy_ix].clone());
-            }
-
-            let handles = population
-                .iter()
-                .map(|m| {
-                    ConstantFold::evaluate_one(
-                        Arc::clone(m),
-                        sample_x.clone(),
-                        sample_y.clone(),
-                        Arc::clone(&neuros),
-                    )
-                })
-                .collect::<Vec<JoinHandle<()>>>();
-
-            for h in handles {
-                h.join();
-            }
-
-            population.make_contiguous().sort_unstable_by(|m, n| {
-                let m = m.lock().unwrap();
-                let n = n.lock().unwrap();
-                m.loss.partial_cmp(&n.loss).unwrap()
-            });
+            ConstantFold::evaluate(&mut population, &basis, &hyper);
 
             println!("Min loss: {}", population[0].lock().unwrap().loss);
 
@@ -198,14 +259,16 @@ impl ConstantFold {
             let mut children_per: Vec<usize> = evolvable.iter().map(|_| 0).collect();
 
             let mut parent_selector = 0;
-            for i in 0..=population_size {
+            for i in 0..=(population_size - elite.len()) {
                 children_per[parent_selector] += 1;
                 parent_selector = i % num_evolvable;
             }
 
             let mut next_population: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+            next_population.append(&mut elite);
+
             for (i, b) in evolvable.into_iter().enumerate() {
-                next_population.append(&mut self.population(
+                next_population.append(&mut self.weave_population(
                     Some((b, &backtrack)),
                     &neuros,
                     children_per[i],
@@ -213,6 +276,72 @@ impl ConstantFold {
             }
 
             population = next_population;
+        }
+
+        return (population, basis, hyper);
+    }
+
+    /// Low touch, continuous single-neuron swap step for an already evolved pathway.
+    pub fn constant_mutate(
+        &self,
+        mut population: VecDeque<Arc<Mutex<Manifold>>>,
+        basis: Basis,
+        hyper: Hyper,
+        term_epochs: u64,
+    ) {
+        let Hyper {
+            population_size,
+            elitism_carryover,
+            carryover_rate,
+            ..
+        } = hyper;
+
+        let mut epochs = 0;
+        let proceed = |epochs: &u64, term_epochs: &u64| {
+            if *term_epochs == 0 {
+                return true;
+            }
+            epochs < term_epochs
+        };
+
+        while proceed(&epochs, &term_epochs) {
+            ConstantFold::evaluate(&mut population, &basis, &hyper);
+
+            let mut elite: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+            for _ in 0..elitism_carryover {
+                let m = population.pop_front();
+                if let Some(m) = m {
+                    elite.push_back(m)
+                }
+            }
+
+            let mut carryover: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+            let num_carryover = (carryover_rate * population_size as f64).floor() as usize;
+            for _ in 0..num_carryover {
+                let m = population.pop_front();
+                if let Some(m) = m {
+                    carryover.push_back(m)
+                }
+            }
+
+            let mut children_per: Vec<usize> = carryover.iter().map(|_| 0).collect();
+            let mut parent_selector = 0;
+            for i in 0..=(population_size - elite.len()) {
+                children_per[parent_selector] += 1;
+                parent_selector = i % num_carryover;
+            }
+
+            let mut next_population: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+            next_population.append(&mut elite);
+
+            for (i, b) in carryover.into_iter().enumerate() {
+                // Mutate population
+                next_population.append(&mut self.mutate_population(b, None, children_per[i]));
+            }
+
+            population = next_population;
+
+            epochs += 1
         }
     }
 }

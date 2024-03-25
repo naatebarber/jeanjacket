@@ -31,6 +31,7 @@ impl Op {
     }
 }
 
+#[derive(Clone)]
 pub struct Manifold {
     input: usize,
     reaches: Vec<usize>,
@@ -165,39 +166,49 @@ impl Manifold {
 
     /// Does a random sample of neurons for an existing layer of the Manifold
     /// Updates the current manifold in place
-    pub fn hotswap_layer(&mut self, backtrack: usize) -> &mut Self {
-        let opl = self.web.get_mut(backtrack);
-        match opl {
-            Some(layer) => {
-                let mut rng = thread_rng();
+    pub fn _hotswap_layer(&mut self, backtrack: usize) -> Manifold {
+        let mut web = self.web.clone();
+        let layer = web.get_mut(backtrack).unwrap();
 
-                for op in layer.iter_mut() {
-                    let nix = rng.gen_range(0..self.mesh_len);
-                    op.swap_focus(nix)
-                }
+        let mut rng = thread_rng();
 
-                self
-            }
-            None => self,
+        for op in layer.iter_mut() {
+            let nix = rng.gen_range(0..self.mesh_len);
+            op.swap_focus(nix)
+        }
+
+        Manifold {
+            input: self.input,
+            output: self.output,
+            reaches: self.reaches.clone(),
+            reach_points: self.reach_points.clone(),
+            mesh_len: self.mesh_len,
+            web,
+            loss: 0.,
         }
     }
 
     /// Does a random sample of neurons for a single layer operation of a Manifold
     /// Updates the existing manifold in place
-    pub fn hotswap_single(&mut self, backtrack: usize) -> &mut Self {
-        let opl = self.web.get_mut(backtrack);
-        match opl {
-            Some(layer) => {
-                let mut rng = thread_rng();
-                let ix = rng.gen_range(0..layer.len());
-                let nix = rng.gen_range(0..self.mesh_len);
+    pub fn hotswap_single(&mut self, backtrack: usize) -> Manifold {
+        let mut web = self.web.clone();
+        let layer = web.get_mut(backtrack).unwrap();
 
-                let op = layer.get_mut(ix).unwrap();
-                op.swap_focus(nix);
+        let mut rng = thread_rng();
+        let ix = rng.gen_range(0..layer.len());
+        let nix = rng.gen_range(0..self.mesh_len);
 
-                self
-            }
-            None => self,
+        let op = layer.get_mut(ix).unwrap();
+        op.swap_focus(nix);
+
+        Manifold {
+            input: self.input,
+            output: self.output,
+            reaches: self.reaches.clone(),
+            reach_points: self.reach_points.clone(),
+            mesh_len: self.mesh_len,
+            web,
+            loss: 0.,
         }
     }
 

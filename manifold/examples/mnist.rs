@@ -61,9 +61,9 @@ fn main() {
             y,
         },
         Hyper {
-            population_size: 100,
+            population_size: 10,
             carryover_rate: 0.2,
-            elitism_carryover: 5,
+            elitism_carryover: 3,
             sample_size: 40,
         },
     );

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use manifold::constant_fold::{Basis, Hyper};
-use manifold::{ConstantFold, Neuron};
+use manifold::optimizers::{Basis, EvolutionHyper, FixedReweave, Optimizer};
+use manifold::Neuron;
 use rand::{thread_rng, Rng};
 
 fn main() {
@@ -25,14 +25,14 @@ fn main() {
     let tx = x[0..10].to_vec();
     let ty = y[0..10].to_vec();
 
-    let cf = ConstantFold::new(1, 1, vec![2, 8, 3]);
-    let (mut population, ..) = cf.optimize_traversal(
+    let cf = FixedReweave::new(1, 1, vec![2, 8, 3]);
+    let (mut population, ..) = cf.train(
         Basis {
             neuros: Arc::clone(&neuros),
             x,
             y,
         },
-        Hyper {
+        EvolutionHyper {
             population_size: 1,
             carryover_rate: 1.,
             elitism_carryover: 0,
@@ -44,10 +44,10 @@ fn main() {
     let manifold = manifold.lock().unwrap();
 
     for (i, x) in tx.iter().enumerate() {
-        let mut signals = ConstantFold::signalize(x);
+        let mut signals = FixedReweave::signalize(x);
         manifold.forward(&mut signals, &neuros);
 
-        let target = ConstantFold::signalize(&ty[i]);
+        let target = FixedReweave::signalize(&ty[i]);
 
         if target.len() != signals.len() {
             println!(

@@ -6,10 +6,9 @@ use std::{
     sync::Arc,
 };
 
-use manifold::{
-    constant_fold::{Basis, Hyper},
-    ConstantFold, Manifold, Neuron, Signal,
-};
+use manifold::{Manifold, Neuron, Signal};
+
+use manifold::optimizers::{Basis, EvolutionHyper, FixedReweave, Optimizer};
 
 fn onehot(i: u8, m: u8) -> Vec<f64> {
     let mut oh = vec![0.; m.into()];
@@ -63,15 +62,15 @@ fn main() {
 
         let neuros = Neuron::substrate(100000, 0.0..1.0);
 
-        let cf = ConstantFold::new(784, 9, vec![20, 50, 20]);
+        let cf = FixedReweave::new(784, 9, vec![20, 50, 20]);
 
-        let (mut population, basis, ..) = cf.optimize_traversal(
+        let (mut population, basis, ..) = cf.train(
             Basis {
                 neuros: Arc::new(neuros),
                 x,
                 y,
             },
-            Hyper {
+            EvolutionHyper {
                 population_size: 200,
                 carryover_rate: 0.2,
                 elitism_carryover: 3,
@@ -79,7 +78,7 @@ fn main() {
             },
         );
 
-        ConstantFold::out("./.models/mnist", &mut population, basis.neuros).unwrap();
+        FixedReweave::out("./.models/mnist", &mut population, basis.neuros).unwrap();
     }
 
     let (tx, ty) = normalize_mnist_xy(tst_img, tst_lbl);
@@ -94,10 +93,10 @@ fn main() {
     let mut winrate: Vec<f64> = vec![];
 
     for (i, mut x) in tx.into_iter().enumerate() {
-        let mut signals = ConstantFold::signalize(&mut x);
+        let mut signals = FixedReweave::signalize(&mut x);
         manifold.forward(&mut signals, &neuros);
 
-        let targ = ConstantFold::signalize(&ty[i]);
+        let targ = FixedReweave::signalize(&ty[i]);
 
         println!("{}", signals.len());
 

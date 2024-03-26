@@ -4,6 +4,7 @@ use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::error::Error;
+use std::ops::Range;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Op {
@@ -55,6 +56,32 @@ impl Manifold {
             reaches,
             output,
             mesh_len,
+            web: vec![],
+            loss: 0.,
+        }
+    }
+
+    pub fn dynamic(
+        input: usize,
+        output: usize,
+        breadth: Range<usize>,
+        depth: Range<usize>,
+        mesh_len: usize,
+    ) -> Manifold {
+        let mut rng = thread_rng();
+        let d = rng.gen_range(depth);
+
+        let mut reaches: Vec<usize> = vec![];
+
+        for _ in 0..d {
+            reaches.push(rng.gen_range(breadth.clone()))
+        }
+
+        Manifold {
+            input,
+            output,
+            mesh_len,
+            reaches,
             web: vec![],
             loss: 0.,
         }
@@ -252,6 +279,10 @@ impl Manifold {
 
     pub fn accumulate_loss(&mut self, a: f64) {
         self.loss += a;
+    }
+
+    pub fn reset_loss(&mut self) {
+        self.loss = 0.;
     }
 
     pub fn _sequence(&self) -> String {

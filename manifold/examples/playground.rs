@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use manifold::constant_fold::{Basis, Hyper};
-use manifold::{ConstantFold, Manifold, Neuron, Signal};
+use manifold::{ConstantFold, Neuron};
 use rand::{thread_rng, Rng};
 
 fn main() {
@@ -26,7 +26,7 @@ fn main() {
     let ty = y[0..10].to_vec();
 
     let cf = ConstantFold::new(1, 1, vec![2, 8, 3]);
-    let (mut population, basis, hyper) = cf.optimize_traversal(
+    let (mut population, ..) = cf.optimize_traversal(
         Basis {
             neuros: Arc::clone(&neuros),
             x,

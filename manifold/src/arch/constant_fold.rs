@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::fs;
-use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};

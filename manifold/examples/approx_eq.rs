@@ -1,7 +1,7 @@
 use rand::{prelude::*, thread_rng};
 use std::{fs, sync::Arc};
 
-use manifold::optimizers::{Basis, Dynamic, EvolutionHyper, Optimizer};
+use manifold::optimizers::{Basis, EvolutionHyper, FixedReweave, Optimizer};
 use manifold::substrates::binary::{Manifold, Neuron};
 
 fn main() {
@@ -20,7 +20,7 @@ fn main() {
         y.push(vec![o]);
     }
 
-    let optim = Dynamic::new(1, 1, 5..20, 3..20, 1000);
+    let optim = FixedReweave::new(1, 1, vec![1, 2, 3]);
 
     let (mut population, basis, ..) = optim.train(
         Basis {
@@ -36,7 +36,7 @@ fn main() {
         },
     );
 
-    Dynamic::out("./.models/approx_eq", &mut population, basis.neuros).unwrap();
+    FixedReweave::out("./.models/approx_eq", &mut population, basis.neuros).unwrap();
 
     let serial_manifold = fs::read_to_string("./.models/approx_eq.manifold.json").unwrap();
     let serial_substrate = fs::read_to_string("./.models/approx_eq.substrate.json").unwrap();
@@ -47,7 +47,7 @@ fn main() {
     println!("From heuristic with x of {}: {}", x, heuristic(&x));
 
     let vex = vec![x];
-    let mut signals = Dynamic::signalize(&vex);
+    let mut signals = FixedReweave::signalize(&vex);
     manifold.forward(&mut signals, &neuros);
     println!("From manifold with x of {}: {}", x, signals[0].x);
 }

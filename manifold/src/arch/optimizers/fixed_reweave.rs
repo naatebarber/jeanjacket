@@ -1,10 +1,14 @@
 use std::collections::VecDeque;
+use std::error::Error;
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use std::{env, fs};
 
 use rand::{thread_rng, Rng};
 
 use super::{Basis, EvolutionHyper, Optimizer};
-use crate::substrates::binary::{Manifold, Population, Substrate};
+use crate::substrates::binary::{Manifold, Neuron, Population, Signal, Substrate};
 
 pub struct FixedReweave {
     d_in: usize,
@@ -12,8 +16,12 @@ pub struct FixedReweave {
     reach: Vec<usize>,
 }
 
-impl Optimizer for FixedReweave {
-    fn train(&self, basis: Basis, hyper: EvolutionHyper) -> (Population, Basis, EvolutionHyper) {
+impl Optimizer<Substrate, Population> for FixedReweave {
+    fn train(
+        &self,
+        basis: Basis<Substrate>,
+        hyper: EvolutionHyper,
+    ) -> (Population, Basis<Substrate>, EvolutionHyper) {
         let Basis { neuros, .. } = basis.clone();
         let EvolutionHyper {
             population_size,
@@ -216,7 +224,7 @@ impl FixedReweave {
             });
     }
 
-    pub fn evaluate(population: &mut Population, basis: &Basis, hyper: &EvolutionHyper) {
+    pub fn evaluate(population: &mut Population, basis: &Basis<Substrate>, hyper: &EvolutionHyper) {
         let mut rng = thread_rng();
         let set_length = basis.x.len();
         let mut sample_x: Vec<Vec<f64>> = vec![];
@@ -247,5 +255,69 @@ impl FixedReweave {
             let n = n.lock().unwrap();
             m.loss.partial_cmp(&n.loss).unwrap()
         });
+    }
+
+    pub fn vectorize(signals: &[Signal]) -> Vec<f64> {
+        signals.iter().map(|s| s.x.clone()).collect::<Vec<f64>>()
+    }
+
+    pub fn signalize(x: &[f64]) -> Vec<Signal> {
+        x.iter()
+            .map(|x| Signal { x: x.clone() })
+            .collect::<Vec<Signal>>()
+    }
+
+    pub fn out(
+        tag: &str,
+        population: &mut Population,
+        neuros: Substrate,
+    ) -> Result<(), Box<dyn Error>> {
+        population.make_contiguous().sort_unstable_by(|m, n| {
+            let m = m.lock().unwrap();
+            let n = n.lock().unwrap();
+            m.loss.partial_cmp(&n.loss).unwrap()
+        });
+
+        let path = env::current_dir()?;
+
+        let manifold_path = path.join(PathBuf::from_str(
+            format!(".models/{}.manifold.json", tag).as_str(),
+        )?);
+        let substrate_path = path.join(PathBuf::from_str(
+            format!(".models/{}.substrate.json", tag).as_str(),
+        )?);
+
+        match population.pop_front() {
+            Some(manifold) => {
+                let m = manifold.lock().unwrap();
+                let serial = m.dump()?;
+                fs::write(manifold_path, serial)?;
+            }
+            None => (),
+        };
+
+        let substrate_serial = Neuron::dump_substrate(neuros)?;
+        fs::write(substrate_path, substrate_serial)?;
+
+        Ok(())
+    }
+
+    pub fn load(tag: &str) -> Result<(Manifold, Substrate), Box<dyn Error>> {
+        let path = env::current_dir()?;
+
+        let manifold_path = path.join(PathBuf::from_str(
+            format!(".models/{}.manifold.json", tag).as_str(),
+        )?);
+        let substrate_path = path.join(PathBuf::from_str(
+            format!(".models/{}.substrate.json", tag).as_str(),
+        )?);
+
+        let manifold_serial = fs::read_to_string(&manifold_path)?;
+        let substrate_serial = fs::read_to_string(&substrate_path)?;
+
+        let manifold = Manifold::load(manifold_serial)?;
+        let substrate = Neuron::load_substrate(substrate_serial)?;
+
+        Ok((manifold, substrate))
     }
 }

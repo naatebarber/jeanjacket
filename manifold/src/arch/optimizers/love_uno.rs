@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use rand::{thread_rng, Rng};
 
 use super::{Basis, EvolutionHyper, Optimizer};
-use crate::substrates::binary::{Manifold, Population, Substrate};
+use crate::substrates::binary::{Manifold, Population, Signal, Substrate};
 
 pub struct LoveUno {
     d_in: usize,
@@ -12,8 +12,12 @@ pub struct LoveUno {
     reach: Vec<usize>,
 }
 
-impl Optimizer for LoveUno {
-    fn train(&self, basis: Basis, hyper: EvolutionHyper) -> (Population, Basis, EvolutionHyper) {
+impl Optimizer<Substrate, Population> for LoveUno {
+    fn train(
+        &self,
+        basis: Basis<Substrate>,
+        hyper: EvolutionHyper,
+    ) -> (Population, Basis<Substrate>, EvolutionHyper) {
         let Basis { neuros, .. } = basis.clone();
         let EvolutionHyper {
             population_size, ..
@@ -150,7 +154,7 @@ impl LoveUno {
             });
     }
 
-    pub fn evaluate(population: &mut Population, basis: &Basis, hyper: &EvolutionHyper) {
+    pub fn evaluate(population: &mut Population, basis: &Basis<Substrate>, hyper: &EvolutionHyper) {
         let mut rng = thread_rng();
         let set_length = basis.x.len();
         let mut sample_x: Vec<Vec<f64>> = vec![];
@@ -181,5 +185,15 @@ impl LoveUno {
             let n = n.lock().unwrap();
             m.loss.partial_cmp(&n.loss).unwrap()
         });
+    }
+
+    fn vectorize(signals: &[Signal]) -> Vec<f64> {
+        signals.iter().map(|s| s.x.clone()).collect::<Vec<f64>>()
+    }
+
+    fn signalize(x: &[f64]) -> Vec<Signal> {
+        x.iter()
+            .map(|x| Signal { x: x.clone() })
+            .collect::<Vec<Signal>>()
     }
 }

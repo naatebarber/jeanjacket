@@ -3,7 +3,7 @@ pub use arch::*;
 
 #[cfg(test)]
 mod test_manifold {
-    use crate::{Manifold, Neuron, Signal};
+    use crate::substrates::binary::{Manifold, Neuron, Signal};
 
     #[test]
     fn manifold_transformations() {

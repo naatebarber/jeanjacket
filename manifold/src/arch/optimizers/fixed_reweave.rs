@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use rand::{thread_rng, Rng};
 
-use super::super::Manifold;
-use super::{Basis, EvolutionHyper, Optimizer, Substrate};
+use super::{Basis, EvolutionHyper, Optimizer};
+use crate::substrates::binary::{Manifold, Population, Substrate};
 
 pub struct FixedReweave {
     d_in: usize,
@@ -13,11 +13,7 @@ pub struct FixedReweave {
 }
 
 impl Optimizer for FixedReweave {
-    fn train(
-        &self,
-        basis: Basis,
-        hyper: EvolutionHyper,
-    ) -> (VecDeque<Arc<Mutex<Manifold>>>, Basis, EvolutionHyper) {
+    fn train(&self, basis: Basis, hyper: EvolutionHyper) -> (Population, Basis, EvolutionHyper) {
         let Basis { neuros, .. } = basis.clone();
         let EvolutionHyper {
             population_size,
@@ -26,7 +22,7 @@ impl Optimizer for FixedReweave {
             ..
         } = hyper;
 
-        let mut population: VecDeque<Arc<Mutex<Manifold>>> = FixedReweave::weave_population(
+        let mut population: Population = FixedReweave::weave_population(
             self.reach.clone(),
             self.d_in,
             self.d_out,
@@ -34,7 +30,7 @@ impl Optimizer for FixedReweave {
             population_size,
         );
 
-        let get_max_layers = |population: &VecDeque<Arc<Mutex<Manifold>>>| {
+        let get_max_layers = |population: &Population| {
             population.iter().fold(0, |a, m| {
                 let l = m.lock().unwrap().get_num_layers();
                 if l > a {
@@ -58,7 +54,7 @@ impl Optimizer for FixedReweave {
             );
 
             // Carry over the elite
-            let mut elite: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+            let mut elite: Population = VecDeque::new();
             for _ in 0..elitism_carryover {
                 let m = population.pop_front();
                 if let Some(m) = m {
@@ -66,7 +62,7 @@ impl Optimizer for FixedReweave {
                 }
             }
 
-            let mut carryover: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+            let mut carryover: Population = VecDeque::new();
             let num_carryover = (carryover_rate * population_size as f64).floor() as usize;
             for _ in 0..num_carryover {
                 let m = population.pop_front();
@@ -78,7 +74,7 @@ impl Optimizer for FixedReweave {
             // Append the carryover manifolds that can no longer evolve to elite
             // If inviable, they will wash out.
             // Evolve the rest
-            let mut evolvable: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+            let mut evolvable: Population = VecDeque::new();
             for m in carryover.into_iter() {
                 let manifold = m.lock().unwrap();
                 if manifold.get_num_layers() < backtrack + 1 {
@@ -104,10 +100,10 @@ impl Optimizer for FixedReweave {
                 parent_selector = i % num_evolvable;
             }
 
-            let mut next_population: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+            let mut next_population: Population = VecDeque::new();
             next_population.append(&mut elite);
 
-            type PopulationSlice = VecDeque<Arc<Mutex<Manifold>>>;
+            type PopulationSlice = Population;
 
             let create_population_tasks = evolvable
                 .into_iter()
@@ -153,8 +149,8 @@ impl FixedReweave {
         d_out: usize,
         neurons: usize,
         count: usize,
-    ) -> VecDeque<Arc<Mutex<Manifold>>> {
-        let mut p: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+    ) -> Population {
+        let mut p: Population = VecDeque::new();
 
         let mut weave_tasks: Vec<Box<dyn (FnOnce() -> Arc<Mutex<Manifold>>) + Send>> = vec![];
 
@@ -186,8 +182,8 @@ impl FixedReweave {
         from: Arc<Mutex<Manifold>>,
         backtrack: usize,
         count: usize,
-    ) -> VecDeque<Arc<Mutex<Manifold>>> {
-        let mut p: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+    ) -> Population {
+        let mut p: Population = VecDeque::new();
 
         for _ in 0..count {
             let mut parent = from.lock().unwrap();
@@ -220,11 +216,7 @@ impl FixedReweave {
             });
     }
 
-    pub fn evaluate(
-        population: &mut VecDeque<Arc<Mutex<Manifold>>>,
-        basis: &Basis,
-        hyper: &EvolutionHyper,
-    ) {
+    pub fn evaluate(population: &mut Population, basis: &Basis, hyper: &EvolutionHyper) {
         let mut rng = thread_rng();
         let set_length = basis.x.len();
         let mut sample_x: Vec<Vec<f64>> = vec![];

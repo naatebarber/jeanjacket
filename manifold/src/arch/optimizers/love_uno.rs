@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use rand::{thread_rng, Rng};
 
-use super::super::Manifold;
-use super::{Basis, EvolutionHyper, Optimizer, Substrate};
+use super::{Basis, EvolutionHyper, Optimizer};
+use crate::substrates::binary::{Manifold, Population, Substrate};
 
 pub struct LoveUno {
     d_in: usize,
@@ -13,17 +13,13 @@ pub struct LoveUno {
 }
 
 impl Optimizer for LoveUno {
-    fn train(
-        &self,
-        basis: Basis,
-        hyper: EvolutionHyper,
-    ) -> (VecDeque<Arc<Mutex<Manifold>>>, Basis, EvolutionHyper) {
+    fn train(&self, basis: Basis, hyper: EvolutionHyper) -> (Population, Basis, EvolutionHyper) {
         let Basis { neuros, .. } = basis.clone();
         let EvolutionHyper {
             population_size, ..
         } = hyper;
 
-        let mut population: VecDeque<Arc<Mutex<Manifold>>> = LoveUno::weave_population(
+        let mut population: Population = LoveUno::weave_population(
             self.reach.clone(),
             self.d_in,
             self.d_out,
@@ -31,7 +27,7 @@ impl Optimizer for LoveUno {
             population_size,
         );
 
-        let get_max_layers = |population: &VecDeque<Arc<Mutex<Manifold>>>| {
+        let get_max_layers = |population: &Population| {
             population.iter().fold(0, |a, m| {
                 let l = m.lock().unwrap().get_num_layers();
                 if l > a {
@@ -87,8 +83,8 @@ impl LoveUno {
         d_out: usize,
         neurons: usize,
         count: usize,
-    ) -> VecDeque<Arc<Mutex<Manifold>>> {
-        let mut p: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+    ) -> Population {
+        let mut p: Population = VecDeque::new();
 
         let mut weave_tasks: Vec<Box<dyn (FnOnce() -> Arc<Mutex<Manifold>>) + Send>> = vec![];
 
@@ -120,8 +116,8 @@ impl LoveUno {
         from: Arc<Mutex<Manifold>>,
         layer_ix: usize,
         count: usize,
-    ) -> VecDeque<Arc<Mutex<Manifold>>> {
-        let mut p: VecDeque<Arc<Mutex<Manifold>>> = VecDeque::new();
+    ) -> Population {
+        let mut p: Population = VecDeque::new();
 
         for _ in 0..count {
             let mut parent = from.lock().unwrap();
@@ -154,11 +150,7 @@ impl LoveUno {
             });
     }
 
-    pub fn evaluate(
-        population: &mut VecDeque<Arc<Mutex<Manifold>>>,
-        basis: &Basis,
-        hyper: &EvolutionHyper,
-    ) {
+    pub fn evaluate(population: &mut Population, basis: &Basis, hyper: &EvolutionHyper) {
         let mut rng = thread_rng();
         let set_length = basis.x.len();
         let mut sample_x: Vec<Vec<f64>> = vec![];

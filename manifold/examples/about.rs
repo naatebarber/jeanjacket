@@ -1,4 +1,4 @@
-use manifold::{Manifold, Neuron, Signal};
+use manifold::substrates::binary::{Manifold, Neuron, Signal};
 
 fn main() {
     let mesh_len: usize = 100;

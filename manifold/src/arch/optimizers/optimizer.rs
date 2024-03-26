@@ -1,4 +1,5 @@
-use crate::{Manifold, Neuron, Signal};
+use crate::substrates::binary::{Manifold, Neuron, Population, Signal, Substrate};
+
 use std::collections::VecDeque;
 use std::env;
 use std::error::Error;
@@ -22,9 +23,6 @@ pub struct EvolutionHyper {
     pub elitism_carryover: usize,
     pub sample_size: usize,
 }
-
-pub type Population = VecDeque<Arc<Mutex<Manifold>>>;
-pub type Substrate = Arc<Vec<Neuron>>;
 
 pub trait Optimizer {
     fn vectorize(signals: &[Signal]) -> Vec<f64> {

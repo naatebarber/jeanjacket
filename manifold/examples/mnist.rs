@@ -6,9 +6,8 @@ use std::{
     sync::Arc,
 };
 
-use manifold::{Manifold, Neuron, Signal};
-
 use manifold::optimizers::{Basis, EvolutionHyper, FixedReweave, Optimizer};
+use manifold::substrates::binary::{Manifold, Neuron, Signal};
 
 fn onehot(i: u8, m: u8) -> Vec<f64> {
     let mut oh = vec![0.; m.into()];

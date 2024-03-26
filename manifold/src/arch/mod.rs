@@ -1,11 +1,5 @@
-mod activation;
-
-pub mod manifold;
-pub mod neuron;
+pub mod activation;
 pub mod optimizers;
-pub mod signal;
+pub mod substrates;
 
-pub use manifold::Manifold;
-pub use neuron::{Neuron, NeuronOperation};
 pub use optimizers::Optimizer;
-pub use signal::Signal;

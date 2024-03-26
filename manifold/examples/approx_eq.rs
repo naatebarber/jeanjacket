@@ -1,9 +1,8 @@
 use rand::{prelude::*, thread_rng};
 use std::{fs, sync::Arc};
 
-use manifold::{Manifold, Neuron};
-
 use manifold::optimizers::{Basis, Dynamic, EvolutionHyper, Optimizer};
+use manifold::substrates::binary::{Manifold, Neuron};
 
 fn main() {
     let neuros = Neuron::substrate(10000, -2.0..2.0);

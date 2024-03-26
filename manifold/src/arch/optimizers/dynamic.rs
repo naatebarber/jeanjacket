@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 
 use rand::{thread_rng, Rng};
 
-use super::super::Manifold;
-use super::{Basis, EvolutionHyper, Optimizer, Population, Substrate};
+use super::{Basis, EvolutionHyper, Optimizer};
+use crate::substrates::binary::{Manifold, Population, Substrate};
 
 pub struct Dynamic {
     d_in: usize,

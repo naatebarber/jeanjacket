@@ -2,9 +2,8 @@ use std::error::Error;
 use std::ops::Range;
 use std::sync::Arc;
 
-use super::activation::{Activation, ActivationType};
-use super::optimizers::Substrate;
-use super::Signal;
+use super::{Signal, Substrate};
+use crate::activation::{Activation, ActivationType};
 use rand::prelude::*;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};

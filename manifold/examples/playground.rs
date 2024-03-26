@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use manifold::optimizers::{Basis, EvolutionHyper, FixedReweave, Optimizer};
-use manifold::Neuron;
+use manifold::substrates::binary::Neuron;
 use rand::{thread_rng, Rng};
 
 fn main() {

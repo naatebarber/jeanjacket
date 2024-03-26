@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use rand::{thread_rng, Rng};
 
-use super::super::{Manifold, Neuron};
-use super::{Basis, EvolutionHyper, Optimizer};
+use super::super::Manifold;
+use super::{Basis, EvolutionHyper, Optimizer, Substrate};
 
 pub struct LoveUno {
     d_in: usize,
@@ -136,7 +136,7 @@ impl LoveUno {
         manifold_am: Arc<Mutex<Manifold>>,
         sample_x: Vec<Vec<f64>>,
         sample_y: Vec<Vec<f64>>,
-        neuros: Arc<Vec<Neuron>>,
+        neuros: Substrate,
     ) {
         let mut manifold = manifold_am.lock().unwrap();
 

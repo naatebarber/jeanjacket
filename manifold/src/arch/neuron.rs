@@ -3,6 +3,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use super::activation::{Activation, ActivationType};
+use super::optimizers::Substrate;
 use super::Signal;
 use rand::prelude::*;
 use rand::thread_rng;
@@ -96,11 +97,11 @@ impl Neuron {
         signals.splice(target..target + 1, splits);
     }
 
-    pub fn dump_substrate(neuros: Arc<Vec<Neuron>>) -> Result<String, Box<dyn Error>> {
+    pub fn dump_substrate(neuros: Substrate) -> Result<String, Box<dyn Error>> {
         Ok(serde_json::to_string(&neuros)?)
     }
 
-    pub fn load_substrate(serial: String) -> Result<Arc<Vec<Neuron>>, Box<dyn Error>> {
+    pub fn load_substrate(serial: String) -> Result<Substrate, Box<dyn Error>> {
         Ok(Arc::new(serde_json::from_str(&serial)?))
     }
 }

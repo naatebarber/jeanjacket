@@ -1,5 +1,6 @@
 use crate::{Manifold, Neuron, Signal};
 use std::collections::VecDeque;
+use std::env;
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
@@ -10,7 +11,7 @@ use std::thread::{self, available_parallelism};
 
 #[derive(Clone)]
 pub struct Basis {
-    pub neuros: Arc<Vec<Neuron>>,
+    pub neuros: Substrate,
     pub x: Vec<Vec<f64>>,
     pub y: Vec<Vec<f64>>,
 }
@@ -23,6 +24,7 @@ pub struct EvolutionHyper {
 }
 
 pub type Population = VecDeque<Arc<Mutex<Manifold>>>;
+pub type Substrate = Arc<Vec<Neuron>>;
 
 pub trait Optimizer {
     fn vectorize(signals: &[Signal]) -> Vec<f64> {
@@ -85,7 +87,7 @@ pub trait Optimizer {
     fn out(
         tag: &str,
         population: &mut VecDeque<Arc<Mutex<Manifold>>>,
-        neuros: Arc<Vec<Neuron>>,
+        neuros: Substrate,
     ) -> Result<(), Box<dyn Error>> {
         population.make_contiguous().sort_unstable_by(|m, n| {
             let m = m.lock().unwrap();
@@ -93,23 +95,47 @@ pub trait Optimizer {
             m.loss.partial_cmp(&n.loss).unwrap()
         });
 
-        let manifold_fname = format!("{}.manifold.json", tag);
+        let path = env::current_dir()?;
+
+        let manifold_path = path.join(PathBuf::from_str(
+            format!(".models/{}.manifold.json", tag).as_str(),
+        )?);
+        let substrate_path = path.join(PathBuf::from_str(
+            format!(".models/{}.substrate.json", tag).as_str(),
+        )?);
 
         match population.pop_front() {
             Some(manifold) => {
                 let m = manifold.lock().unwrap();
                 let serial = m.dump()?;
-                fs::write(PathBuf::from_str(&manifold_fname)?, serial)?;
+                fs::write(manifold_path, serial)?;
             }
             None => (),
         };
 
-        let substrate_fname = format!("{}.substrate.json", tag);
-
         let substrate_serial = Neuron::dump_substrate(neuros)?;
-        fs::write(PathBuf::from_str(&substrate_fname)?, substrate_serial)?;
+        fs::write(substrate_path, substrate_serial)?;
 
         Ok(())
+    }
+
+    fn load(tag: &str) -> Result<(Manifold, Substrate), Box<dyn Error>> {
+        let path = env::current_dir()?;
+
+        let manifold_path = path.join(PathBuf::from_str(
+            format!(".models/{}.manifold.json", tag).as_str(),
+        )?);
+        let substrate_path = path.join(PathBuf::from_str(
+            format!(".models/{}.substrate.json", tag).as_str(),
+        )?);
+
+        let manifold_serial = fs::read_to_string(&manifold_path)?;
+        let substrate_serial = fs::read_to_string(&substrate_path)?;
+
+        let manifold = Manifold::load(manifold_serial)?;
+        let substrate = Neuron::load_substrate(substrate_serial)?;
+
+        Ok((manifold, substrate))
     }
 
     fn train(&self, basis: Basis, hyper: EvolutionHyper) -> (Population, Basis, EvolutionHyper);

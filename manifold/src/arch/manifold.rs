@@ -183,6 +183,44 @@ impl Manifold {
         }
     }
 
+    pub fn reweave_layer(&mut self, layer_ix: usize) -> Manifold {
+        let mut web = self.web.clone();
+        let layer = web.get_mut(layer_ix).unwrap();
+        let mut neur_rng = thread_rng();
+        let mut cross_rng = thread_rng();
+
+        let mut pick_neuron = || neur_rng.gen_range(0..self.mesh_len) as usize;
+        let mut pick_cross = || cross_rng.gen_range(0..layer.len()) as usize;
+
+        let cross = pick_cross();
+
+        let mover_op = layer
+            .iter()
+            .fold(NeuronOperation::Forward, |nop, op| match op.operation {
+                NeuronOperation::Forward => return nop,
+                NeuronOperation::Merge | NeuronOperation::Split => return op.operation.clone(),
+            });
+
+        for (i, op) in layer.iter_mut().enumerate() {
+            if i == cross {
+                op.swap_focus(pick_neuron());
+                op.swap_op(mover_op.clone())
+            } else {
+                op.swap_focus(pick_neuron());
+                op.swap_op(NeuronOperation::Forward)
+            }
+        }
+
+        Manifold {
+            reaches: self.reaches.clone(),
+            web,
+            mesh_len: self.mesh_len.clone(),
+            input: self.input.clone(),
+            output: self.output.clone(),
+            loss: 0.,
+        }
+    }
+
     pub fn discount_factor(&self) -> f64 {
         let layers = self.web.len();
         -(0.5 / (layers + 1) as f64) + 1.

@@ -63,7 +63,7 @@ fn main() {
 
         let neuros = Neuron::substrate(100000, 0.0..1.0);
 
-        let cf = ConstantFold::new(784, 9, vec![50]);
+        let cf = ConstantFold::new(784, 9, vec![20, 50, 20]);
 
         let (mut population, basis, ..) = cf.optimize_traversal(
             Basis {
@@ -71,17 +71,11 @@ fn main() {
                 x,
                 y,
             },
-            // Hyper {
-            //     population_size: 20,
-            //     carryover_rate: 0.2,
-            //     elitism_carryover: 3,
-            //     sample_size: 20,
-            // },
             Hyper {
-                population_size: 5,
+                population_size: 200,
                 carryover_rate: 0.2,
                 elitism_carryover: 3,
-                sample_size: 1,
+                sample_size: 20,
             },
         );
 
@@ -100,13 +94,8 @@ fn main() {
     let mut winrate: Vec<f64> = vec![];
 
     for (i, mut x) in tx.into_iter().enumerate() {
-        // let mut manifold = Manifold::new(784, 9, vec![50], neuros.len());
-        // manifold.weave();
-
         let mut signals = ConstantFold::signalize(&mut x);
-        println!("INput {}", signals.len());
         manifold.forward(&mut signals, &neuros);
-        println!("Output {}", signals.len());
 
         let targ = ConstantFold::signalize(&ty[i]);
 

@@ -1,9 +1,14 @@
 use mnist::*;
-use std::sync::Arc;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+};
 
 use manifold::{
     constant_fold::{Basis, Hyper},
-    ConstantFold, Neuron,
+    ConstantFold, Manifold, Neuron, Signal,
 };
 
 fn onehot(i: u8, m: u8) -> Vec<f64> {
@@ -38,8 +43,8 @@ fn main() {
     let Mnist {
         trn_img,
         trn_lbl,
-        // tst_img,
-        // tst_lbl,
+        tst_img,
+        tst_lbl,
         ..
     } = MnistBuilder::new()
         .label_format_digit()
@@ -48,23 +53,79 @@ fn main() {
         .test_set_length(1_000)
         .finalize();
 
-    let (x, y) = normalize_mnist_xy(trn_img, trn_lbl);
+    if !Path::exists(
+        PathBuf::from_str("./.models/mnist.manifold.json")
+            .unwrap()
+            .as_path(),
+    ) {
+        // if true {
+        let (x, y) = normalize_mnist_xy(trn_img, trn_lbl);
 
-    let neuros = Neuron::substrate(1000000);
+        let neuros = Neuron::substrate(100000, 0.0..1.0);
 
-    let cf = ConstantFold::new(784, 9, vec![50]);
+        let cf = ConstantFold::new(784, 9, vec![50]);
 
-    let _ = cf.optimize_traversal(
-        Basis {
-            neuros: Arc::new(neuros),
-            x,
-            y,
-        },
-        Hyper {
-            population_size: 10,
-            carryover_rate: 0.2,
-            elitism_carryover: 3,
-            sample_size: 40,
-        },
-    );
+        let (mut population, basis, ..) = cf.optimize_traversal(
+            Basis {
+                neuros: Arc::new(neuros),
+                x,
+                y,
+            },
+            // Hyper {
+            //     population_size: 20,
+            //     carryover_rate: 0.2,
+            //     elitism_carryover: 3,
+            //     sample_size: 20,
+            // },
+            Hyper {
+                population_size: 5,
+                carryover_rate: 0.2,
+                elitism_carryover: 3,
+                sample_size: 1,
+            },
+        );
+
+        ConstantFold::out("./.models/mnist", &mut population, basis.neuros).unwrap();
+    }
+
+    let (tx, ty) = normalize_mnist_xy(tst_img, tst_lbl);
+
+    let serial_manifold = fs::read_to_string("./.models/mnist.manifold.json").unwrap();
+    let serial_substrate = fs::read_to_string("./.models/mnist.substrate.json").unwrap();
+    let manifold = Manifold::load(serial_manifold).unwrap();
+    let neuros = Neuron::load_substrate(serial_substrate).unwrap();
+
+    println!("OS {}", manifold.web[manifold.web.len() - 1].len());
+
+    let mut winrate: Vec<f64> = vec![];
+
+    for (i, mut x) in tx.into_iter().enumerate() {
+        // let mut manifold = Manifold::new(784, 9, vec![50], neuros.len());
+        // manifold.weave();
+
+        let mut signals = ConstantFold::signalize(&mut x);
+        println!("INput {}", signals.len());
+        manifold.forward(&mut signals, &neuros);
+        println!("Output {}", signals.len());
+
+        let targ = ConstantFold::signalize(&ty[i]);
+
+        println!("{}", signals.len());
+
+        let prediction = Signal::argmax(&signals);
+        let actual = Signal::argmax(&targ);
+
+        if prediction == actual {
+            winrate.push(1.);
+            println!("{} === {}", prediction, actual);
+        } else {
+            winrate.push(0.);
+            println!("{} =/= {}", prediction, actual);
+        }
+
+        break;
+    }
+
+    let acc = winrate.iter().fold(0., |a, v| a + v) / winrate.len() as f64;
+    println!("Final accuracy on MNIST dataset: {}%", acc * 100.);
 }

@@ -1,16 +1,21 @@
+use std::error::Error;
+use std::ops::Range;
+use std::sync::Arc;
+
 use super::activation::{Activation, ActivationType};
 use super::Signal;
 use rand::prelude::*;
 use rand::thread_rng;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum NeuronOperation {
+    Forward,
     Split,
     Merge,
-    Forward,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Neuron {
     w: f64,
     b: f64,
@@ -18,7 +23,7 @@ pub struct Neuron {
 }
 
 impl Neuron {
-    pub fn random_normal() -> Neuron {
+    pub fn random_normal(range: &Range<f64>) -> Neuron {
         let mut rng = thread_rng();
         let mut ats = vec![|| ActivationType::Relu, || ActivationType::Elu, || {
             ActivationType::LeakyRelu
@@ -26,16 +31,16 @@ impl Neuron {
         let activation = ats.choose_mut(&mut rng).unwrap();
 
         Neuron {
-            w: rng.gen(),
-            b: rng.gen(),
+            w: rng.gen_range(range.clone()),
+            b: rng.gen_range(range.clone()),
             a: activation(),
         }
     }
 
-    pub fn substrate(size: usize) -> Vec<Neuron> {
+    pub fn substrate(size: usize, range: Range<f64>) -> Vec<Neuron> {
         let mut neurons: Vec<Neuron> = vec![];
         for _ in 0..=size {
-            neurons.push(Neuron::random_normal())
+            neurons.push(Neuron::random_normal(&range))
         }
         neurons
     }
@@ -49,7 +54,11 @@ impl Neuron {
     }
 
     pub fn forward(&self, signals: &mut Vec<Signal>, target: usize, discount: f64) {
-        let signal = signals.get_mut(target).unwrap();
+        let signal = match signals.get_mut(target) {
+            Some(x) => x,
+            None => return,
+        };
+
         let mut after = signal.x.clone();
         after *= self.w;
         after += self.b;
@@ -85,5 +94,13 @@ impl Neuron {
         let splits = vec![Signal { x: md }, Signal { x: md }];
 
         signals.splice(target..target + 1, splits);
+    }
+
+    pub fn dump_substrate(neuros: Arc<Vec<Neuron>>) -> Result<String, Box<dyn Error>> {
+        Ok(serde_json::to_string(&neuros)?)
+    }
+
+    pub fn load_substrate(serial: String) -> Result<Arc<Vec<Neuron>>, Box<dyn Error>> {
+        Ok(Arc::new(serde_json::from_str(&serial)?))
     }
 }

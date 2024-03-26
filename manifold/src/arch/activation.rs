@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 pub struct Activation;
 
 impl Activation {
@@ -23,7 +25,7 @@ impl Activation {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum ActivationType {
     Relu,
     LeakyRelu,

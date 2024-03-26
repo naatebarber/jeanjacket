@@ -1,4 +1,8 @@
+use std::error::Error;
+use std::fs;
 use std::ops::Deref;
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, available_parallelism};
 use std::{collections::VecDeque, thread::JoinHandle};
@@ -155,7 +159,10 @@ impl ConstantFold {
             .map(|x| ConstantFold::signalize(&x))
             .enumerate()
             .for_each(|(i, mut x)| {
-                manifold.forward(&mut x, neuros.deref());
+                manifold.forward(&mut x, &neuros);
+                if x.len() != sample_y[i].len() {
+                    panic!("Output malformed")
+                }
                 let loss = ConstantFold::mse(&mut x, &sample_y[i]);
                 manifold.accumulate_loss(loss)
             });
@@ -216,15 +223,20 @@ impl ConstantFold {
             population_size,
         );
 
-        let max_layers = population.iter().fold(0, |a, m| {
-            let l = m.lock().unwrap().get_num_layers();
-            if l > a {
-                return l;
-            }
-            a
-        });
+        let get_max_layers = |population: &VecDeque<Arc<Mutex<Manifold>>>| {
+            population.iter().fold(0, |a, m| {
+                let l = m.lock().unwrap().get_num_layers();
+                if l > a {
+                    return l;
+                }
+                a
+            })
+        };
 
-        for backtrack in 0..max_layers - 1 {
+        let mut max_layers = get_max_layers(&population);
+        let mut backtrack = 0;
+
+        loop {
             ConstantFold::evaluate(&mut population, &basis, &hyper);
 
             println!(
@@ -307,8 +319,44 @@ impl ConstantFold {
             }
 
             population = next_population;
+            backtrack += 1;
+            max_layers = get_max_layers(&population);
+
+            if backtrack >= max_layers {
+                break;
+            }
         }
 
         return (population, basis, hyper);
+    }
+
+    pub fn out(
+        tag: &str,
+        population: &mut VecDeque<Arc<Mutex<Manifold>>>,
+        neuros: Arc<Vec<Neuron>>,
+    ) -> Result<(), Box<dyn Error>> {
+        population.make_contiguous().sort_unstable_by(|m, n| {
+            let m = m.lock().unwrap();
+            let n = n.lock().unwrap();
+            m.loss.partial_cmp(&n.loss).unwrap()
+        });
+
+        let manifold_fname = format!("{}.manifold.json", tag);
+
+        match population.pop_front() {
+            Some(manifold) => {
+                let m = manifold.lock().unwrap();
+                let serial = m.dump()?;
+                fs::write(PathBuf::from_str(&manifold_fname)?, serial)?;
+            }
+            None => (),
+        };
+
+        let substrate_fname = format!("{}.substrate.json", tag);
+
+        let substrate_serial = Neuron::dump_substrate(neuros)?;
+        fs::write(PathBuf::from_str(&substrate_fname)?, substrate_serial)?;
+
+        Ok(())
     }
 }

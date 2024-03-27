@@ -163,32 +163,34 @@ impl Manifold {
         }
     }
 
+    pub fn turn_one(total: usize, neuron_ix: usize, amplitude: i32) -> usize {
+        let mut turned = (neuron_ix as i32) - amplitude;
+        let mesh_len = total as i32;
+        while turned.abs() > mesh_len {
+            turned -= match turned < 0 {
+                true => -mesh_len,
+                false => mesh_len,
+            };
+        }
+
+        if turned < 0 {
+            turned = mesh_len - turned;
+        }
+
+        turned as usize
+    }
+
     pub fn turn(&mut self, amplitude: i32) {
-        let turn_one = |neuron_ix: usize, amplitude: i32| -> usize {
-            let mut turned = (neuron_ix as i32) - amplitude;
-            let mesh_len = self.mesh_len as i32;
-            while turned.abs() > mesh_len {
-                turned -= match turned < 0 {
-                    true => -mesh_len,
-                    false => mesh_len,
-                };
-            }
-
-            if turned < 0 {
-                turned = mesh_len - turned;
-            }
-
-            turned as usize
-        };
-
         for layer in self.web.iter_mut() {
             for (_, opvec) in layer.iter_mut() {
                 for op in opvec.iter_mut() {
-                    op.neuron_ix = turn_one(op.neuron_ix, amplitude);
+                    op.neuron_ix = Manifold::turn_one(self.mesh_len, op.neuron_ix, amplitude);
                 }
             }
         }
     }
+
+    pub fn backward(&mut self, _loss: f64) {}
 
     pub fn accumulate_loss(&mut self, a: f64) {
         self.loss += a;

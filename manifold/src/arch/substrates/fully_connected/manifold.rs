@@ -186,8 +186,9 @@ impl Manifold {
     }
 
     pub fn turn_one(total: usize, neuron_ix: usize, amplitude: i32) -> usize {
-        let mut turned = (neuron_ix as i32) - amplitude;
+        let mut turned = (neuron_ix as i32) + amplitude;
         let mesh_len = total as i32;
+
         while turned.abs() > mesh_len {
             turned -= match turned < 0 {
                 true => -mesh_len,
@@ -196,7 +197,11 @@ impl Manifold {
         }
 
         if turned < 0 {
-            turned = mesh_len - turned;
+            turned = mesh_len + turned;
+        }
+
+        if turned as usize > total {
+            panic!("Tf you tryna pass off {} as less than {}", turned, total);
         }
 
         turned as usize
@@ -304,8 +309,8 @@ impl Manifold {
 
     pub fn backwards(
         &mut self,
-        _loss: f64,
-        amplitude: i32,
+        loss: f64,
+        mut amplitude: i32,
         x: &Vec<f64>,
         y: &Vec<f64>,
         loss_fn: &LossFn,
@@ -317,6 +322,8 @@ impl Manifold {
         // These pathways are then tested, and the best one lives. A mixture of backprop and genetic.
 
         // Term: OOGI = op of greatest influence
+
+        amplitude = (amplitude as f64 * loss.abs()).floor() as i32;
 
         let heuristic_action_potential = Arc::new(|op: &Op| op.action_potential);
         // let heuristic_influence = |op: &Op| op.influence;

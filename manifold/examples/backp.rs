@@ -24,8 +24,18 @@ fn zero_two() {
         (x, y)
     }
 
+    let (sx, sy) = gen_binary_training_data(5);
+    println!("{:?} {:?}", sx, sy);
+
+    let as_argmax = sy
+        .into_iter()
+        .map(|x| f::argmax(&x))
+        .collect::<Vec<usize>>();
+
+    println!("{}", f::accuracy::<usize>(&as_argmax, &as_argmax));
+
     let (train_x, train_y) = gen_binary_training_data(5000);
-    let (test_x, test_y) = gen_binary_training_data(1000);
+    let (test_x, test_y) = gen_binary_training_data(100);
 
     let neuros = Neuron::substrate(100000, -10.0..10.0);
     let mut manifold = Manifold::new(100000 - 1, 1, 2, vec![10, 20, 10]);
@@ -40,7 +50,7 @@ fn zero_two() {
 
     trainer
         .set_sample_size(40)
-        .set_epochs(1000)
+        .set_epochs(300)
         .set_amplitude(2)
         .set_post_processor(post_processor)
         .set_loss_fn(f::binary_cross_entropy)
@@ -60,6 +70,9 @@ fn zero_two() {
 
         predictions.push(f::argmax(&prediction));
     }
+
+    println!("{:?}", predictions);
+    println!("{:?}", actual);
 
     let accuracy = f::accuracy::<usize>(&predictions, &actual);
 

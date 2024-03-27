@@ -1,3 +1,4 @@
+use crate::substrates::traits::SignalConversion;
 use std::collections::VecDeque;
 
 use rand::{thread_rng, Rng};
@@ -5,6 +6,16 @@ use rand::{thread_rng, Rng};
 #[derive(Clone, Debug)]
 pub struct Signal {
     pub x: f64,
+}
+
+impl SignalConversion<Signal> for Signal {
+    fn signalize(vec: Vec<f64>) -> VecDeque<Signal> {
+        vec.into_iter().map(|x| Signal { x }).collect()
+    }
+
+    fn vectorize(sig: VecDeque<Signal>) -> Vec<f64> {
+        sig.into_iter().map(|x| x.x).collect()
+    }
 }
 
 impl Signal {

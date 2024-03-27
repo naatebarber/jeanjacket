@@ -2,7 +2,8 @@ use rand::{prelude::*, thread_rng};
 use std::{fs, sync::Arc};
 
 use manifold::optimizers::{Basis, EvolutionHyper, FixedReweave, Optimizer};
-use manifold::substrates::binary::{Manifold, Neuron};
+use manifold::substrates::binary::{Manifold, Neuron, Signal};
+use manifold::substrates::traits::SignalConversion;
 
 fn main() {
     let neuros = Neuron::substrate(10000, -2.0..2.0);
@@ -47,7 +48,7 @@ fn main() {
     println!("From heuristic with x of {}: {}", x, heuristic(&x));
 
     let vex = vec![x];
-    let mut signals = FixedReweave::signalize(&vex);
+    let mut signals = Vec::from(Signal::signalize(vex));
     manifold.forward(&mut signals, &neuros);
     println!("From manifold with x of {}: {}", x, signals[0].x);
 }

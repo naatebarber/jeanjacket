@@ -9,6 +9,7 @@ use rand::{thread_rng, Rng};
 
 use super::{Basis, EvolutionHyper, Optimizer};
 use crate::substrates::binary::{Manifold, Neuron, Population, Signal, Substrate};
+use crate::substrates::traits::SignalConversion;
 
 pub struct FixedReweave {
     d_in: usize,
@@ -212,14 +213,15 @@ impl FixedReweave {
 
         sample_x
             .into_iter()
-            .map(|x| FixedReweave::signalize(&x))
+            .map(|x| Signal::signalize(x))
             .enumerate()
-            .for_each(|(i, mut x)| {
+            .for_each(|(i, x)| {
+                let mut x = Vec::from(x);
                 manifold.forward(&mut x, &neuros);
                 if x.len() != sample_y[i].len() {
                     panic!("Output malformed")
                 }
-                let loss = FixedReweave::mse(&FixedReweave::vectorize(&x), &sample_y[i]);
+                let loss = FixedReweave::mse(&Signal::vectorize(VecDeque::from(x)), &sample_y[i]);
                 manifold.accumulate_loss(loss)
             });
     }
@@ -255,16 +257,6 @@ impl FixedReweave {
             let n = n.lock().unwrap();
             m.loss.partial_cmp(&n.loss).unwrap()
         });
-    }
-
-    pub fn vectorize(signals: &[Signal]) -> Vec<f64> {
-        signals.iter().map(|s| s.x.clone()).collect::<Vec<f64>>()
-    }
-
-    pub fn signalize(x: &[f64]) -> Vec<Signal> {
-        x.iter()
-            .map(|x| Signal { x: x.clone() })
-            .collect::<Vec<Signal>>()
     }
 
     pub fn out(

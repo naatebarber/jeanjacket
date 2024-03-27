@@ -1,21 +1,9 @@
 use mnist::*;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::Arc,
-};
 
-use manifold::optimizers::{Basis, EvolutionHyper, FixedReweave, Optimizer};
-use manifold::substrates::binary::{Manifold, Neuron, Signal};
-
-fn onehot(i: u8, m: u8) -> Vec<f64> {
-    let mut oh = vec![0.; m.into()];
-    if i < m {
-        oh[i as usize] = 1.;
-    }
-    oh
-}
+use manifold::f;
+use manifold::optimizers::{Basis, EvolutionHyper, Optimizer, Turnstile};
+use manifold::substrates::fully_connected::{Neuron, Signal};
+use manifold::substrates::traits::SignalConversion;
 
 fn normalize_mnist_xy(x: Vec<u8>, y: Vec<u8>) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
     let x = x.chunks_exact(784).collect::<Vec<&[u8]>>();
@@ -31,7 +19,7 @@ fn normalize_mnist_xy(x: Vec<u8>, y: Vec<u8>) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) 
 
     let y = y
         .into_iter()
-        .map(|l| onehot(l, 9))
+        .map(|l| f::onehot(l, 9))
         .collect::<Vec<Vec<f64>>>();
 
     (x, y)
@@ -51,68 +39,42 @@ fn main() {
         .test_set_length(1_000)
         .finalize();
 
-    if !Path::exists(
-        PathBuf::from_str("./.models/mnist.manifold.json")
-            .unwrap()
-            .as_path(),
-    ) {
-        // if true {
-        let (x, y) = normalize_mnist_xy(trn_img, trn_lbl);
+    let (x, y) = normalize_mnist_xy(trn_img, trn_lbl);
 
-        let neuros = Neuron::substrate(100000, 0.0..1.0);
+    let neuros = Neuron::substrate(100000, -10.0..10.0);
 
-        let cf = FixedReweave::new(784, 9, vec![20, 50, 20]);
+    let cf = Turnstile::new(784, 9, 5..20, 5..20, -2..2, 100);
 
-        let (mut population, basis, ..) = cf.train(
-            Basis {
-                neuros: Arc::new(neuros),
-                x,
-                y,
-            },
-            EvolutionHyper {
-                population_size: 200,
-                carryover_rate: 0.2,
-                elitism_carryover: 3,
-                sample_size: 20,
-            },
-        );
-
-        FixedReweave::out("./.models/mnist", &mut population, basis.neuros).unwrap();
-    }
+    let (mut population, basis, ..) = cf.train(
+        Basis { neuros, x, y },
+        EvolutionHyper {
+            population_size: 400,
+            carryover_rate: 0.2,
+            elitism_carryover: 40,
+            sample_size: 20,
+        },
+    );
 
     let (tx, ty) = normalize_mnist_xy(tst_img, tst_lbl);
 
-    let serial_manifold = fs::read_to_string("./.models/mnist.manifold.json").unwrap();
-    let serial_substrate = fs::read_to_string("./.models/mnist.substrate.json").unwrap();
-    let manifold = Manifold::load(serial_manifold).unwrap();
-    let neuros = Neuron::load_substrate(serial_substrate).unwrap();
+    let manifold_am = population.pop_front().unwrap();
+    let manifold = manifold_am.lock().unwrap();
+    let neuros = basis.neuros;
 
-    println!("OS {}", manifold.web[manifold.web.len() - 1].len());
+    let mut predictions: Vec<usize> = vec![];
+    let mut actuals: Vec<usize> = vec![];
 
-    let mut winrate: Vec<f64> = vec![];
-
-    for (i, mut x) in tx.into_iter().enumerate() {
-        let mut signals = FixedReweave::signalize(&mut x);
+    for (i, x) in tx.into_iter().enumerate() {
+        let mut signals = Signal::signalize(x);
         manifold.forward(&mut signals, &neuros);
-
-        let targ = FixedReweave::signalize(&ty[i]);
 
         println!("{}", signals.len());
 
-        let prediction = Signal::argmax(&signals);
-        let actual = Signal::argmax(&targ);
+        let svecs = Signal::vectorize(signals);
 
-        if prediction == actual {
-            winrate.push(1.);
-            println!("{} === {}", prediction, actual);
-        } else {
-            winrate.push(0.);
-            println!("{} =/= {}", prediction, actual);
-        }
-
-        break;
+        predictions.push(f::argmax(&svecs));
+        actuals.push(f::argmax(&ty[i]));
     }
 
-    let acc = winrate.iter().fold(0., |a, v| a + v) / winrate.len() as f64;
-    println!("Final accuracy on MNIST dataset: {}%", acc * 100.);
+    println!("Accuracy: {}%", f::accuracy(&predictions, &actuals))
 }

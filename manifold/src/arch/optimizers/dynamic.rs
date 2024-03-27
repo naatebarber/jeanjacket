@@ -6,6 +6,7 @@ use rand::{thread_rng, Rng};
 
 use super::{Basis, EvolutionHyper, Optimizer};
 use crate::substrates::binary::{Manifold, Population, Signal, Substrate};
+use crate::substrates::traits::SignalConversion;
 
 pub struct Dynamic {
     d_in: usize,
@@ -129,14 +130,15 @@ impl Dynamic {
 
         sample_x
             .into_iter()
-            .map(|x| Dynamic::signalize(&x))
+            .map(|x| Signal::signalize(x))
             .enumerate()
-            .for_each(|(i, mut x)| {
+            .for_each(|(i, x)| {
+                let mut x = Vec::from(x);
                 manifold.forward(&mut x, &neuros);
                 if x.len() != sample_y[i].len() {
                     panic!("Output malformed")
                 }
-                let loss = Dynamic::mse(&Dynamic::vectorize(&x), &sample_y[i]);
+                let loss = Dynamic::mse(&Signal::vectorize(VecDeque::from(x)), &sample_y[i]);
                 manifold.accumulate_loss(loss)
             });
     }
@@ -176,15 +178,5 @@ impl Dynamic {
             let n = n.lock().unwrap();
             m.loss.partial_cmp(&n.loss).unwrap()
         });
-    }
-
-    fn vectorize(signals: &[Signal]) -> Vec<f64> {
-        signals.iter().map(|s| s.x.clone()).collect::<Vec<f64>>()
-    }
-
-    fn signalize(x: &[f64]) -> Vec<Signal> {
-        x.iter()
-            .map(|x| Signal { x: x.clone() })
-            .collect::<Vec<Signal>>()
     }
 }

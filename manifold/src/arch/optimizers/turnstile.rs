@@ -5,7 +5,9 @@ use std::sync::{Arc, Mutex};
 use rand::{thread_rng, Rng};
 
 use super::{Basis, EvolutionHyper, Optimizer};
+use crate::f;
 use crate::substrates::fully_connected::{Manifold, Population, Signal, Substrate};
+use crate::substrates::traits::SignalConversion;
 
 pub struct Turnstile {
     d_in: usize,
@@ -29,13 +31,13 @@ impl Optimizer<Substrate, Population> for Turnstile {
             ..
         } = hyper;
 
-        let mut population = self.weave_population(basis.neuros.len(), population_size.clone());
+        let mut population = self.weave_population(basis.neuros.len() - 1, population_size.clone());
 
         for i in 0..self.epochs {
             Turnstile::evaluate(&mut population, &basis, &hyper);
 
             println!(
-                "({}/{}) Min loss (dynamic optim): {}",
+                "({}/{}) Min loss (turnstile optim): {}",
                 i,
                 self.epochs - 1,
                 population[0].lock().unwrap().loss
@@ -76,8 +78,6 @@ impl Optimizer<Substrate, Population> for Turnstile {
                 children_per[parent_selector] += 1;
                 parent_selector = i % num_carryover;
             }
-
-            println!("{:?}", children_per);
 
             let mut next_population: Population = VecDeque::new();
             next_population.append(&mut elite);
@@ -190,23 +190,19 @@ impl Turnstile {
 
         sample_x
             .into_iter()
-            .map(|x| Turnstile::signalize(&x))
+            .map(|x| Signal::signalize(x))
             .enumerate()
             .for_each(|(i, mut x)| {
                 manifold.forward(&mut x, &neuros);
                 if x.len() != sample_y[i].len() {
                     panic!("Output malformed")
                 }
-                let loss = Turnstile::mse(&Turnstile::vectorize(&x), &sample_y[i]);
+                let loss = f::binary_cross_entropy(&Signal::vectorize(x), &sample_y[i]);
                 manifold.accumulate_loss(loss)
             });
     }
 
-    pub fn evaluate(
-        population: &mut VecDeque<Arc<Mutex<Manifold>>>,
-        basis: &Basis<Substrate>,
-        hyper: &EvolutionHyper,
-    ) {
+    pub fn evaluate(population: &mut Population, basis: &Basis<Substrate>, hyper: &EvolutionHyper) {
         let mut rng = thread_rng();
         let set_length = basis.x.len();
         let mut sample_x: Vec<Vec<f64>> = vec![];
@@ -237,15 +233,5 @@ impl Turnstile {
             let n = n.lock().unwrap();
             m.loss.partial_cmp(&n.loss).unwrap()
         });
-    }
-
-    fn vectorize(signals: &VecDeque<Signal>) -> Vec<f64> {
-        signals.iter().map(|s| s.x.clone()).collect::<Vec<f64>>()
-    }
-
-    fn signalize(x: &[f64]) -> VecDeque<Signal> {
-        x.iter()
-            .map(|x| Signal { x: x.clone() })
-            .collect::<VecDeque<Signal>>()
     }
 }

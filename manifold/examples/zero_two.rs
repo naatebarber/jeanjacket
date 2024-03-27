@@ -48,7 +48,7 @@ fn zero_two() {
     let (mut population, basis, ..) = optim.train(basis, hyper);
 
     let manifold_am = population.pop_front().unwrap();
-    let manifold = manifold_am.lock().unwrap();
+    let mut manifold = manifold_am.lock().unwrap();
 
     let mut predictions: Vec<usize> = vec![];
     let actual = test_y

@@ -27,19 +27,23 @@ fn zero_two() {
     let (train_x, train_y) = gen_binary_training_data(5000);
     let (test_x, test_y) = gen_binary_training_data(1000);
 
-    let neuros = Neuron::substrate(10000, -10.0..10.0);
-    let mut manifold = Manifold::new(10000, 1, 2, vec![10]);
+    let neuros = Neuron::substrate(100000, -10.0..10.0);
+    let mut manifold = Manifold::new(100000 - 1, 1, 2, vec![10, 20, 10]);
+    manifold.weave();
+
     let mut trainer = Trainer::new(&train_x, &train_y);
+    let post_processor = |sig| {
+        let vecs = Signal::vectorize(sig);
+        let softmax = f::softmax(&vecs);
+        softmax
+    };
 
     trainer
-        .set_sample_size(20)
-        .set_epochs(100)
+        .set_sample_size(40)
+        .set_epochs(1000)
+        .set_amplitude(2)
+        .set_post_processor(post_processor)
         .set_loss_fn(f::binary_cross_entropy)
-        .set_post_processor(|sig| {
-            let vecs = Signal::vectorize(sig);
-            let softmax = f::softmax(&vecs);
-            softmax
-        })
         .train(&mut manifold, &neuros);
 
     let mut predictions: Vec<usize> = vec![];
@@ -52,12 +56,12 @@ fn zero_two() {
         let mut signals = Signal::signalize(test_xv);
         manifold.forward(&mut signals, &neuros);
 
-        let prediction = Signal::vectorize(signals);
+        let prediction = post_processor(signals);
 
         predictions.push(f::argmax(&prediction));
     }
 
-    let accuracy = f::accuracy(&predictions, &actual);
+    let accuracy = f::accuracy::<usize>(&predictions, &actual);
 
     println!("{}% Accuracy", accuracy);
 }

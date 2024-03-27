@@ -58,7 +58,7 @@ fn main() {
     let (tx, ty) = normalize_mnist_xy(tst_img, tst_lbl);
 
     let manifold_am = population.pop_front().unwrap();
-    let manifold = manifold_am.lock().unwrap();
+    let mut manifold = manifold_am.lock().unwrap();
     let neuros = basis.neuros;
 
     let mut predictions: Vec<usize> = vec![];

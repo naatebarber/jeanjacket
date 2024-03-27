@@ -368,22 +368,28 @@ impl Manifold {
                 let mut manifold = m.lock().unwrap();
                 manifold.accumulate_loss(loss);
                 drop(manifold);
+
                 m
             })
-            .filter_map(|amm| Arc::try_unwrap(amm).ok())
-            .filter_map(|mm| mm.into_inner().ok())
-            .collect::<VecDeque<Manifold>>();
+            .collect::<Population>();
+
+        // println!("After unwrap! {}", manifolds.len());
 
         manifolds.make_contiguous().sort_unstable_by(|m, n| {
-            m.loss
-                .partial_cmp(&n.loss)
+            let a = m.lock().unwrap();
+            let b = n.lock().unwrap();
+
+            a.loss
+                .partial_cmp(&b.loss)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        let mut optimized = match manifolds.pop_front() {
+        let optimized_am = match manifolds.pop_front() {
             Some(x) => x,
             None => return,
         };
+
+        let mut optimized = optimized_am.lock().unwrap();
 
         self.cannibalize(&mut optimized);
 
@@ -487,6 +493,7 @@ impl Trainer<'_> {
             }
 
             let avg_loss = losses.iter().fold(0., |a, v| a + v) / losses.len() as f64;
+
             println!("({} / {}) Avg loss: {}", epoch, self.epochs, avg_loss);
         }
 

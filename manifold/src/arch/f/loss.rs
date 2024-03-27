@@ -9,6 +9,10 @@ pub fn mean_squared_error(pred: &[f64], actual: &[f64]) -> f64 {
 }
 
 pub fn binary_cross_entropy(pred: &[f64], actual: &[f64]) -> f64 {
+    if pred.len() != actual.len() {
+        panic!("Output length mismatch!");
+    }
+
     let eps = 1e-9;
 
     let loss: f64 = actual

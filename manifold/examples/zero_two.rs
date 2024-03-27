@@ -1,3 +1,4 @@
+use manifold::activation::ActivationType;
 use manifold::optimizers::{Basis, EvolutionHyper, Turnstile};
 use manifold::substrates::fully_connected::{Neuron, Signal};
 use manifold::substrates::traits::SignalConversion;
@@ -28,7 +29,7 @@ fn zero_two() {
     let (train_x, train_y) = gen_binary_training_data(5000);
     let (test_x, test_y) = gen_binary_training_data(1000);
 
-    let neuros = Neuron::substrate(1000000, -10.0..10.0);
+    let neuros = Neuron::substrate(1000000, -10.0..10.0, ActivationType::Relu);
 
     let hyper = EvolutionHyper {
         population_size: 200,
@@ -58,7 +59,7 @@ fn zero_two() {
 
     for test_xv in test_x.into_iter() {
         let mut signals = Signal::signalize(test_xv);
-        manifold.forward(&mut signals, &basis.neuros);
+        manifold.forward(&mut signals, basis.neuros.clone());
 
         let prediction = Signal::vectorize(signals);
 

@@ -1,8 +1,10 @@
+use std::sync::Arc;
+
+use manifold::activation::ActivationType;
 use mnist::*;
 
 use manifold::f;
-use manifold::optimizers::{Basis, EvolutionHyper, Optimizer, Turnstile};
-use manifold::substrates::fully_connected::{Neuron, Signal};
+use manifold::substrates::fully_connected::{Manifold, Neuron, Signal, Trainer};
 use manifold::substrates::traits::SignalConversion;
 
 fn normalize_mnist_xy(x: Vec<u8>, y: Vec<u8>) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
@@ -39,41 +41,45 @@ fn main() {
         .test_set_length(1_000)
         .finalize();
 
-    let (x, y) = normalize_mnist_xy(trn_img, trn_lbl);
+    let (train_x, train_y) = normalize_mnist_xy(trn_img, trn_lbl);
 
-    let neuros = Neuron::substrate(100000, -10.0..10.0);
+    let neuros = Neuron::substrate(1000000, -10.0..10.0, ActivationType::Relu);
+    let mut manifold = Manifold::new(100000 - 1, 784, 9, vec![100, 30, 10, 40, 10]);
+    manifold.weave();
 
-    let cf = Turnstile::new(784, 9, 5..20, 5..20, -2..2, 100);
+    let mut trainer = Trainer::new(&train_x, &train_y);
+    let post_processor = Arc::new(|sig| {
+        let vecs = Signal::vectorize(sig);
+        let softmax = f::softmax(&vecs);
+        softmax
+    });
 
-    let (mut population, basis, ..) = cf.train(
-        Basis { neuros, x, y },
-        EvolutionHyper {
-            population_size: 400,
-            carryover_rate: 0.2,
-            elitism_carryover: 40,
-            sample_size: 20,
-        },
-    );
+    let loss_fn = Arc::new(f::binary_cross_entropy);
 
-    let (tx, ty) = normalize_mnist_xy(tst_img, tst_lbl);
-
-    let manifold_am = population.pop_front().unwrap();
-    let mut manifold = manifold_am.lock().unwrap();
-    let neuros = basis.neuros;
+    trainer
+        .set_sample_size(40)
+        .set_epochs(300)
+        .set_amplitude(2)
+        .train(
+            &mut manifold,
+            &neuros,
+            post_processor.clone(),
+            loss_fn.clone(),
+        );
 
     let mut predictions: Vec<usize> = vec![];
     let mut actuals: Vec<usize> = vec![];
 
-    for (i, x) in tx.into_iter().enumerate() {
-        let mut signals = Signal::signalize(x);
-        manifold.forward(&mut signals, &neuros);
+    let (test_x, test_y) = normalize_mnist_xy(tst_img, tst_lbl);
 
-        println!("{}", signals.len());
+    for (i, x) in test_x.into_iter().enumerate() {
+        let mut signals = Signal::signalize(x);
+        manifold.forward(&mut signals, neuros.clone());
 
         let svecs = Signal::vectorize(signals);
 
         predictions.push(f::argmax(&svecs));
-        actuals.push(f::argmax(&ty[i]));
+        actuals.push(f::argmax(&test_y[i]));
     }
 
     println!("Accuracy: {}%", f::accuracy(&predictions, &actuals))

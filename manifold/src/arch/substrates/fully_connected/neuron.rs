@@ -18,24 +18,31 @@ pub struct Neuron {
 }
 
 impl Neuron {
-    pub fn random_normal(range: &Range<f64>) -> Neuron {
+    pub fn random_normal(range: &Range<f64>, activation_type: ActivationType) -> Neuron {
         let mut rng = thread_rng();
         let mut ats = vec![|| ActivationType::Relu, || ActivationType::Elu, || {
             ActivationType::LeakyRelu
         }];
-        let activation = ats.choose_mut(&mut rng).unwrap();
+
+        let activation = match activation_type {
+            ActivationType::Mixture => ats.choose_mut(&mut rng).unwrap()(),
+            _ => activation_type,
+        };
+
+        let distribution = rand::distributions::Uniform::new(range.start, range.end);
 
         Neuron {
-            w: rng.gen_range(range.clone()),
-            b: rng.gen_range(range.clone()),
-            a: activation(),
+            w: distribution.sample(&mut rng),
+            b: distribution.sample(&mut rng),
+            a: activation,
         }
     }
 
-    pub fn substrate(size: usize, range: Range<f64>) -> Substrate {
+    pub fn substrate(size: usize, range: Range<f64>, activation_type: ActivationType) -> Substrate {
         let mut neurons: VecDeque<Neuron> = VecDeque::new();
+
         for _ in 0..=size {
-            neurons.push_back(Neuron::random_normal(&range))
+            neurons.push_back(Neuron::random_normal(&range, activation_type))
         }
 
         neurons.make_contiguous().sort_unstable_by(|a, b| {
@@ -55,6 +62,9 @@ impl Neuron {
             ActivationType::Relu => Activation::relu(x),
             ActivationType::LeakyRelu => Activation::leaky_relu(x),
             ActivationType::Elu => Activation::elu(x),
+            ActivationType::Mixture => {
+                panic!("Mixture activation type should never be assigned to a Neuron.");
+            }
         }
     }
 

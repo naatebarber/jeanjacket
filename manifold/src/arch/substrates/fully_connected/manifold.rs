@@ -1,13 +1,13 @@
 use std::{
     collections::{HashMap, VecDeque},
     ops::Range,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use rand::{seq::SliceRandom, thread_rng, Rng};
 
-use super::{Signal, Substrate};
-use crate::substrates::traits::SignalConversion;
+use super::{Population, Signal, Substrate};
+use crate::{f, substrates::traits::SignalConversion};
 
 #[derive(Clone)]
 pub struct Op {
@@ -152,7 +152,7 @@ impl Manifold {
         }
     }
 
-    pub fn forward(&mut self, signals: &mut VecDeque<Signal>, neuros: &Substrate) {
+    pub fn forward(&mut self, signals: &mut VecDeque<Signal>, neuros: Substrate) {
         for layer in self.web.iter_mut() {
             let total_turns = signals.len();
             let mut turns = 0;
@@ -313,49 +313,81 @@ impl Manifold {
         mut amplitude: i32,
         x: &Vec<f64>,
         y: &Vec<f64>,
-        loss_fn: &LossFn,
-        post_processor: &PostProcessor,
-        neuros: &Substrate,
+        loss_fn: LossFn,
+        post_processor: PostProcessor,
+        neuros: Substrate,
     ) {
         // Manifold splits at every point of greatest influence along the pathway from end to start recursively.
         // Incrementing the Op of greatest influence both +1/-1 neuron on the graph.
         // These pathways are then tested, and the best one lives. A mixture of backprop and genetic.
 
-        // Term: OOGI = op of greatest influence
-
+        // Amplitude of change is a function of loss.
         amplitude = (amplitude as f64 * loss.abs()).floor() as i32;
 
+        // Choice between action potential and influence being the deciding factor here.
         let heuristic_action_potential = Arc::new(|op: &Op| op.action_potential);
         // let heuristic_influence = |op: &Op| op.influence;
 
-        let mut all_selves =
+        // Build a manifold for the increase and decrease of every influential connection.
+        let all_selves =
             self.explode_inward_with(self.layers.len(), heuristic_action_potential, amplitude);
 
-        all_selves.iter_mut().for_each(|m| {
-            let mut signals = Signal::signalize(x.clone());
-            m.forward(&mut signals, neuros);
+        // Wrap all the manifolds in mutexes.
+        let wrap_threadsafe = all_selves
+            .into_iter()
+            .map(|m| Arc::new(Mutex::new(m)))
+            .collect::<Population>();
 
-            let signal_vector = post_processor(signals);
+        // Divide the manifold forward passes into tasks to be fed to f::distributed.
+        let multi_forward_pass_tasks = wrap_threadsafe
+            .iter()
+            .map(|m| {
+                let manifold = Arc::clone(&m);
+                let neuros = Arc::clone(&neuros);
+                let mut signals = Signal::signalize(x.clone());
 
-            let loss = loss_fn(&signal_vector, y);
-            m.accumulate_loss(loss);
-        });
+                let task = Box::new(move || {
+                    let mut m = manifold.lock().unwrap();
+                    m.forward(&mut signals, neuros);
+                    drop(m);
 
-        let mut lossy_selves = VecDeque::from(all_selves);
-        lossy_selves.make_contiguous().sort_unstable_by(|m, n| {
+                    (manifold, signals)
+                });
+
+                task as Box<dyn (FnOnce() -> (Arc<Mutex<Manifold>>, VecDeque<Signal>)) + Send>
+            })
+            .collect::<Vec<_>>();
+
+        let forward_results = f::distributed(multi_forward_pass_tasks);
+
+        let mut manifolds = forward_results
+            .into_iter()
+            .map(|(m, s)| {
+                let signal_vector = post_processor(s);
+                let loss = loss_fn(&signal_vector, y);
+                let mut manifold = m.lock().unwrap();
+                manifold.accumulate_loss(loss);
+                drop(manifold);
+                m
+            })
+            .filter_map(|amm| Arc::try_unwrap(amm).ok())
+            .filter_map(|mm| mm.into_inner().ok())
+            .collect::<VecDeque<Manifold>>();
+
+        manifolds.make_contiguous().sort_unstable_by(|m, n| {
             m.loss
                 .partial_cmp(&n.loss)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        let mut optimized = match lossy_selves.pop_front() {
+        let mut optimized = match manifolds.pop_front() {
             Some(x) => x,
             None => return,
         };
 
         self.cannibalize(&mut optimized);
 
-        drop(lossy_selves);
+        drop(manifolds);
     }
 
     pub fn accumulate_loss(&mut self, a: f64) {
@@ -367,8 +399,8 @@ impl Manifold {
     }
 }
 
-pub type LossFn = Box<dyn Fn(&[f64], &[f64]) -> f64>;
-pub type PostProcessor = Box<dyn Fn(VecDeque<Signal>) -> Vec<f64>>;
+pub type LossFn = Arc<dyn (Fn(&[f64], &[f64]) -> f64) + Send + Sync>;
+pub type PostProcessor = Arc<dyn (Fn(VecDeque<Signal>) -> Vec<f64>) + Send + Sync>;
 
 pub struct Trainer<'a> {
     x: &'a Vec<Vec<f64>>,
@@ -376,8 +408,6 @@ pub struct Trainer<'a> {
     sample_size: usize,
     epochs: usize,
     amplitude: i32,
-    post_processor: Option<PostProcessor>,
-    loss_fn: Option<LossFn>,
 }
 
 impl Trainer<'_> {
@@ -388,8 +418,6 @@ impl Trainer<'_> {
             sample_size: 1,
             epochs: 1,
             amplitude: 1,
-            post_processor: None,
-            loss_fn: None,
         }
     }
 
@@ -405,23 +433,6 @@ impl Trainer<'_> {
 
     pub fn set_amplitude(&mut self, x: i32) -> &mut Self {
         self.amplitude = x;
-        self
-    }
-
-    pub fn set_post_processor(
-        &mut self,
-        processor: impl Fn(VecDeque<Signal>) -> Vec<f64> + 'static,
-    ) -> &mut Self {
-        self.post_processor =
-            Some(Box::new(processor) as Box<dyn Fn(VecDeque<Signal>) -> Vec<f64>>);
-        self
-    }
-
-    pub fn set_loss_fn(
-        &mut self,
-        processor: impl Fn(&[f64], &[f64]) -> f64 + 'static,
-    ) -> &mut Self {
-        self.loss_fn = Some(Box::new(processor) as Box<dyn Fn(&[f64], &[f64]) -> f64>);
         self
     }
 
@@ -445,22 +456,9 @@ impl Trainer<'_> {
         &'a mut self,
         manifold: &'a mut Manifold,
         neuros: &'a Substrate,
+        processor_fn: PostProcessor,
+        loss_fn: LossFn,
     ) -> &'a mut Manifold {
-        let loss_fn = match &self.loss_fn {
-            Some(x) => x,
-            None => {
-                println!("Trainer 'train' called without first setting a loss metric.");
-                return manifold;
-            }
-        };
-
-        let default_post_processor =
-            Box::new(Signal::vectorize) as Box<dyn Fn(VecDeque<Signal>) -> Vec<f64>>;
-        let post_processor = match &self.post_processor {
-            Some(x) => x,
-            None => &default_post_processor,
-        };
-
         for epoch in 0..self.epochs {
             let samples = self.sample();
             let mut losses: Vec<f64> = vec![];
@@ -468,9 +466,9 @@ impl Trainer<'_> {
             for data in samples.into_iter() {
                 let (x, y) = data;
                 let mut signals = Signal::signalize(x.clone());
-                manifold.forward(&mut signals, neuros);
+                manifold.forward(&mut signals, Arc::clone(&neuros));
 
-                let signal_vector = post_processor(signals);
+                let signal_vector = processor_fn(signals);
                 let target_vector = y.clone();
 
                 let loss = loss_fn(&signal_vector, &target_vector);
@@ -480,9 +478,9 @@ impl Trainer<'_> {
                     self.amplitude,
                     &x,
                     &y,
-                    &loss_fn,
-                    &post_processor,
-                    &neuros,
+                    Arc::clone(&loss_fn),
+                    Arc::clone(&processor_fn),
+                    Arc::clone(&neuros),
                 );
 
                 losses.push(loss);

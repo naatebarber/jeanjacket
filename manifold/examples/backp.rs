@@ -1,7 +1,8 @@
-use manifold::f;
 use manifold::substrates::fully_connected::{Manifold, Neuron, Signal, Trainer};
 use manifold::substrates::traits::SignalConversion;
+use manifold::{activation::ActivationType, f};
 use rand::{thread_rng, Rng};
+use std::sync::Arc;
 
 fn zero_two() {
     fn gen_binary_training_data(size: usize) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
@@ -37,24 +38,29 @@ fn zero_two() {
     let (train_x, train_y) = gen_binary_training_data(5000);
     let (test_x, test_y) = gen_binary_training_data(100);
 
-    let neuros = Neuron::substrate(100000, -10.0..10.0);
+    let neuros = Neuron::substrate(100000, -0.0..2.0, ActivationType::Relu);
     let mut manifold = Manifold::new(100000 - 1, 1, 2, vec![10, 20, 10]);
     manifold.weave();
 
     let mut trainer = Trainer::new(&train_x, &train_y);
-    let post_processor = |sig| {
+    let post_processor = Arc::new(|sig| {
         let vecs = Signal::vectorize(sig);
         let softmax = f::softmax(&vecs);
         softmax
-    };
+    });
+
+    let loss_fn = Arc::new(f::binary_cross_entropy);
 
     trainer
         .set_sample_size(40)
         .set_epochs(300)
         .set_amplitude(2)
-        .set_post_processor(post_processor)
-        .set_loss_fn(f::binary_cross_entropy)
-        .train(&mut manifold, &neuros);
+        .train(
+            &mut manifold,
+            &neuros,
+            post_processor.clone(),
+            loss_fn.clone(),
+        );
 
     let mut predictions: Vec<usize> = vec![];
     let actual = test_y
@@ -64,7 +70,7 @@ fn zero_two() {
 
     for test_xv in test_x.into_iter() {
         let mut signals = Signal::signalize(test_xv);
-        manifold.forward(&mut signals, &neuros);
+        manifold.forward(&mut signals, Arc::clone(&neuros));
 
         let prediction = post_processor(signals);
 

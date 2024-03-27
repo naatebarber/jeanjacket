@@ -3,4 +3,5 @@ pub mod f;
 pub mod optimizers;
 pub mod substrates;
 
+pub use activation::ActivationType::*;
 pub use optimizers::Optimizer;

@@ -50,6 +50,9 @@ impl Neuron {
             ActivationType::Relu => Activation::relu(x),
             ActivationType::LeakyRelu => Activation::leaky_relu(x),
             ActivationType::Elu => Activation::elu(x),
+            ActivationType::Mixture => {
+                panic!("Mixture activation type should never be assigned to a Neuron.");
+            }
         }
     }
 

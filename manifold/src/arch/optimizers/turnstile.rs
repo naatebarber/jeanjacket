@@ -193,7 +193,7 @@ impl Turnstile {
             .map(|x| Signal::signalize(x))
             .enumerate()
             .for_each(|(i, mut x)| {
-                manifold.forward(&mut x, &neuros);
+                manifold.forward(&mut x, Arc::clone(&neuros));
                 if x.len() != sample_y[i].len() {
                     panic!("Output malformed")
                 }

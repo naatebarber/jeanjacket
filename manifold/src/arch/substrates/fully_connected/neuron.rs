@@ -1,11 +1,17 @@
 use std::collections::VecDeque;
+use std::env;
 use std::error::Error;
+use std::fs;
 use std::ops::Range;
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use super::{Signal, Substrate};
 use crate::activation::{Activation, ActivationType};
+use crate::substrates;
 
+use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
@@ -18,24 +24,36 @@ pub struct Neuron {
 }
 
 impl Neuron {
-    pub fn random_normal(range: &Range<f64>) -> Neuron {
+    pub fn random_normal(
+        activation: ActivationType,
+        distribution: Uniform<f64>,
+        rng: &mut ThreadRng,
+    ) -> Neuron {
         let mut rng = thread_rng();
-        let mut ats = vec![|| ActivationType::Relu, || ActivationType::Elu, || {
-            ActivationType::LeakyRelu
-        }];
-        let activation = ats.choose_mut(&mut rng).unwrap();
 
         Neuron {
-            w: rng.gen_range(range.clone()),
-            b: rng.gen_range(range.clone()),
-            a: activation(),
+            w: distribution.sample(&mut rng),
+            b: distribution.sample(&mut rng),
+            a: activation,
         }
     }
 
-    pub fn substrate(size: usize, range: Range<f64>) -> Substrate {
+    pub fn substrate(
+        size: usize,
+        range: Range<f64>,
+        activation: ActivationType,
+    ) -> (Substrate, usize) {
         let mut neurons: VecDeque<Neuron> = VecDeque::new();
+
+        let distribution = Uniform::new(range.start, range.end);
+        let mut rng = thread_rng();
+
         for _ in 0..=size {
-            neurons.push_back(Neuron::random_normal(&range))
+            neurons.push_back(Neuron::random_normal(
+                activation.clone(),
+                distribution,
+                &mut rng,
+            ))
         }
 
         neurons.make_contiguous().sort_unstable_by(|a, b| {
@@ -47,7 +65,7 @@ impl Neuron {
             }
         });
 
-        Arc::new(neurons)
+        (Arc::new(neurons), size - 1)
     }
 
     pub fn activation(&self, x: f64) -> f64 {
@@ -69,11 +87,48 @@ impl Neuron {
         signal.x = self.activation(signal.x);
     }
 
-    pub fn dump_substrate(neuros: Substrate) -> Result<String, Box<dyn Error>> {
-        Ok(serde_json::to_string(&neuros)?)
+    pub fn dump_substrate(neuros: Substrate, tag: &str) -> Result<(), Box<dyn Error>> {
+        let substrate_str = serde_json::to_string(&neuros)?;
+        let cwd = env::current_dir()?;
+        fs::write(
+            cwd.join(PathBuf::from_str(
+                format!(".models/{}.substrate.json", tag).as_str(),
+            )?),
+            substrate_str,
+        )?;
+
+        Ok(())
     }
 
-    pub fn load_substrate(serial: String) -> Result<Substrate, Box<dyn Error>> {
-        Ok(Arc::new(serde_json::from_str(&serial)?))
+    pub fn load_substrate(tag: &str) -> Result<(Substrate, usize), Box<dyn Error>> {
+        let cwd = env::current_dir()?;
+
+        let serial = fs::read_to_string(cwd.join(PathBuf::from_str(
+            format!(".models/{}.substrate.json", tag).as_str(),
+        )?))?;
+
+        let substrate: Substrate = Arc::new(serde_json::from_str(&serial)?);
+        let substrate_len = substrate.len() - 1;
+
+        Ok((substrate, substrate_len))
+    }
+
+    pub fn load_substrate_or_create(
+        tag: &str,
+        size: usize,
+        range: Range<f64>,
+        activation: ActivationType,
+    ) -> (Substrate, usize) {
+        let (substrate, len) = match Neuron::load_substrate(tag) {
+            Ok(s) => s,
+            _ => {
+                let (neuros, mesh_len) = Neuron::substrate(size, range, activation);
+                Neuron::dump_substrate(neuros.clone(), tag)
+                    .unwrap_or_else(|_| println!("Failed to save substrate."));
+                (neuros, mesh_len)
+            }
+        };
+
+        (substrate, len)
     }
 }

@@ -231,7 +231,9 @@ impl Manifold {
 
                 for (_six, opvec) in layer.iter() {
                     for (_opix, _op) in opvec.iter().enumerate() {
-                        if heuristic(_op) > max {
+                        // TODO if two ops' heuristics are equal this will always pick either the last or the first one.
+                        // [0.5, 0.5]
+                        if heuristic(_op) >= max {
                             six = *_six;
                             opix = _opix;
                             op = Some(_op);
@@ -320,13 +322,14 @@ impl Manifold {
         // Manifold splits at every point of greatest influence along the pathway from end to start recursively.
         // Incrementing the Op of greatest influence both +1/-1 neuron on the graph.
         // These pathways are then tested, and the best one lives. A mixture of backprop and genetic.
-
-        // Term: OOGI = op of greatest influence
-
         amplitude = (amplitude as f64 * loss.abs().powi(2)).floor() as i32;
 
+        // Max amplitude
+        if amplitude as f32 > self.mesh_len as f32 / 3. {
+            amplitude = (self.mesh_len as f32 / 3.).floor() as i32;
+        }
+
         let heuristic_action_potential = Arc::new(|op: &Op| op.action_potential);
-        // let heuristic_influence = |op: &Op| op.influence;
 
         let mut all_selves =
             self.explode_inward_with(self.layers.len(), heuristic_action_potential, amplitude);
@@ -334,7 +337,6 @@ impl Manifold {
         all_selves.iter_mut().for_each(|m| {
             let mut signals = Signal::signalize(x.clone());
             m.forward(&mut signals, neuros);
-
             let signal_vector = post_processor(signals);
 
             let loss = loss_fn(&signal_vector, y);

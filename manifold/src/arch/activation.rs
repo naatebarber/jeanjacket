@@ -25,7 +25,7 @@ impl Activation {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ActivationType {
     Relu,
     LeakyRelu,

@@ -322,11 +322,10 @@ impl Manifold {
         // These pathways are then tested, and the best one lives. A mixture of backprop and genetic.
 
         // Amplitude of change is a function of loss.
-        amplitude = (amplitude as f64 * loss.abs()).floor() as i32;
+        amplitude = (amplitude as f64 * loss).ceil() as i32;
 
         // Choice between action potential and influence being the deciding factor here.
-        let heuristic_action_potential = Arc::new(|op: &Op| op.action_potential);
-        // let heuristic_influence = |op: &Op| op.influence;
+        let heuristic_action_potential = Arc::new(|op: &Op| op.action_potential * op.influence);
 
         // Build a manifold for the increase and decrease of every influential connection.
         let all_selves =

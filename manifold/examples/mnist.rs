@@ -7,7 +7,7 @@ use manifold::f;
 use manifold::substrates::fully_connected::{Manifold, Neuron, Signal, Trainer};
 use manifold::substrates::traits::SignalConversion;
 
-fn print_x_y(x: &Vec<f64>, y: &Vec<f64>) {
+fn _print_x_y(x: &Vec<f64>, y: &Vec<f64>) {
     x.chunks_exact(28).for_each(|c| {
         c.iter().for_each(|v| print!("{}", v.round()));
         println!("");
@@ -53,8 +53,8 @@ fn main() {
     let (train_x, train_y) = normalize_mnist_xy(trn_img, trn_lbl);
     let (test_x, test_y) = normalize_mnist_xy(tst_img, tst_lbl);
 
-    let neuros = Neuron::substrate(1000000, -5.0..5.0, ActivationType::Relu);
-    let mut manifold = Manifold::new(1000000 - 1, 784, 10, vec![100, 40, 10]);
+    let neuros = Neuron::substrate(100000, -2.0..2.0, ActivationType::Relu);
+    let mut manifold = Manifold::new(100000 - 1, 784, 10, vec![1000, 1200, 64]);
     manifold.weave();
 
     let mut trainer = Trainer::new(&train_x, &train_y);
@@ -67,9 +67,9 @@ fn main() {
     let loss_fn = Arc::new(f::binary_cross_entropy);
 
     trainer
-        .set_sample_size(40)
+        .set_sample_size(80)
         .set_epochs(300)
-        .set_amplitude(100)
+        .set_amplitude(20)
         .train(
             &mut manifold,
             &neuros,

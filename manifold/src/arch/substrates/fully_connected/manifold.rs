@@ -323,7 +323,7 @@ impl Manifold {
 
         // Term: OOGI = op of greatest influence
 
-        amplitude = (amplitude as f64 * loss.abs()).floor() as i32;
+        amplitude = (amplitude as f64 * loss.abs().powi(2)).floor() as i32;
 
         let heuristic_action_potential = Arc::new(|op: &Op| op.action_potential);
         // let heuristic_influence = |op: &Op| op.influence;

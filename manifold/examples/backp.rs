@@ -49,9 +49,9 @@ fn zero_two() {
     };
 
     trainer
-        .set_sample_size(40)
+        .set_sample_size(60)
         .set_epochs(300)
-        .set_amplitude(2)
+        .set_amplitude(1)
         .set_post_processor(post_processor)
         .set_loss_fn(f::binary_cross_entropy)
         .train(&mut manifold, &neuros);

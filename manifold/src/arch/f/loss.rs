@@ -5,7 +5,9 @@ pub fn mean_squared_error(pred: &[f64], actual: &[f64]) -> f64 {
         .map(|(i, e)| (e - pred[i]).powi(2))
         .collect::<Vec<f64>>();
 
-    diff.into_iter().fold(0. as f64, |a, e| a + e) / pred.len() as f64
+    let loss = diff.into_iter().fold(0. as f64, |a, e| a + e) / pred.len() as f64;
+    // println!("LOSS {}", loss);
+    loss
 }
 
 pub fn binary_cross_entropy(pred: &[f64], actual: &[f64]) -> f64 {

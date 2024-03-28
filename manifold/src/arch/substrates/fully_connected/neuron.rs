@@ -7,9 +7,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use super::{Signal, Substrate};
+use super::Substrate;
 use crate::activation::{Activation, ActivationType};
-use crate::substrates;
 
 use rand::distributions::Uniform;
 use rand::prelude::*;
@@ -29,11 +28,9 @@ impl Neuron {
         distribution: Uniform<f64>,
         rng: &mut ThreadRng,
     ) -> Neuron {
-        let mut rng = thread_rng();
-
         Neuron {
-            w: distribution.sample(&mut rng),
-            b: distribution.sample(&mut rng),
+            w: distribution.sample(rng),
+            b: distribution.sample(rng),
             a: activation,
         }
     }
@@ -76,15 +73,21 @@ impl Neuron {
         }
     }
 
-    pub fn forward(&self, signal: &mut Signal, discount: f64) {
-        let mut after = signal.x.clone();
-        after *= self.w;
-        after += self.b;
-        let mut diff = after - signal.x;
-        diff *= discount;
+    pub fn forward(&self, inputs: Vec<f64>, discount: f64) -> f64 {
+        let mut affected = inputs
+            .into_iter()
+            .map(|mut i| {
+                let after = i * self.w;
+                let mut diff = after - i;
+                diff *= discount;
+                i += diff;
+                i
+            })
+            .fold(0., |a, v| a + v);
 
-        signal.x += diff;
-        signal.x = self.activation(signal.x);
+        affected += self.b;
+
+        self.activation(affected)
     }
 
     pub fn dump_substrate(neuros: Substrate, tag: &str) -> Result<(), Box<dyn Error>> {

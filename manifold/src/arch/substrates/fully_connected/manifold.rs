@@ -9,7 +9,7 @@ use rand::{seq::SliceRandom, thread_rng, Rng};
 use super::{Signal, Substrate};
 use crate::substrates::traits::SignalConversion;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Op {
     neuron_ix: usize,
     pub prior: f64,
@@ -23,7 +23,7 @@ impl Op {
         target_signal: &mut Signal,
         signals: &mut VecDeque<Signal>,
         neuros: &Substrate,
-        _discount: f64,
+        discount: f64,
     ) -> Signal {
         let neuron = match neuros.get(self.neuron_ix) {
             Some(x) => x,
@@ -33,11 +33,16 @@ impl Op {
         let xout = signals.iter().fold(0., |a, s| a + s.x);
         target_signal.x += xout;
         self.prior = target_signal.x.clone();
-        neuron.forward(target_signal, 1.);
+
+        target_signal.x = neuron.forward(Signal::vectorize(signals.clone()), discount);
 
         self.action_potential = target_signal.x;
         self.influence = (self.action_potential - self.prior).powi(2);
         target_signal.clone()
+    }
+
+    pub fn swap_focus(&mut self, neuron_ix: usize) {
+        self.neuron_ix = neuron_ix;
     }
 }
 
@@ -152,8 +157,17 @@ impl Manifold {
         }
     }
 
+    pub fn discount_factor(&self) -> f64 {
+        let layers = self.web.len();
+        -(0.5 / (layers + 1) as f64) + 1.
+    }
+
+    pub fn discount(web_layer: usize, factor: f64) -> f64 {
+        factor.powi(web_layer as i32)
+    }
+
     pub fn forward(&mut self, signals: &mut VecDeque<Signal>, neuros: &Substrate) {
-        for layer in self.web.iter_mut() {
+        for (_, layer) in self.web.iter_mut().enumerate() {
             let total_turns = signals.len();
             let mut turns = 0;
 
@@ -185,9 +199,9 @@ impl Manifold {
         }
     }
 
-    pub fn turn_one(total: usize, neuron_ix: usize, amplitude: i32) -> usize {
-        let mut turned = (neuron_ix as i32) + amplitude;
-        let mesh_len = total as i32;
+    pub fn turn_one(total: usize, neuron_ix: usize, amplitude: i64) -> usize {
+        let mut turned = (neuron_ix as i64) + amplitude;
+        let mesh_len = total as i64;
 
         while turned.abs() > mesh_len {
             turned -= match turned < 0 {
@@ -207,7 +221,7 @@ impl Manifold {
         turned as usize
     }
 
-    pub fn turn(&mut self, amplitude: i32) {
+    pub fn turn(&mut self, amplitude: i64) {
         for layer in self.web.iter_mut() {
             for (_, opvec) in layer.iter_mut() {
                 for op in opvec.iter_mut() {
@@ -218,7 +232,7 @@ impl Manifold {
     }
 
     pub fn find_max_op_with(
-        &mut self,
+        &self,
         layer: usize,
         heuristic: Arc<dyn Fn(&Op) -> f64>,
     ) -> Option<(usize, usize, &Op)> {
@@ -264,32 +278,49 @@ impl Manifold {
         }
     }
 
+    fn turn_greatest_influence_at_layer(
+        &mut self,
+        layer: usize,
+        heuristic: Arc<dyn Fn(&Op) -> f64>,
+        amplitude: i64,
+    ) -> bool {
+        let max_at_layer = self.find_max_op_with(layer, Arc::clone(&heuristic));
+
+        let mesh_len = self.mesh_len;
+
+        if let Some((six, ix, ..)) = max_at_layer {
+            if let Some(op) = self.select_op(layer, six, ix) {
+                let next_neuron = Manifold::turn_one(mesh_len, op.neuron_ix, amplitude);
+                op.swap_focus(next_neuron);
+                return true;
+            }
+        }
+
+        false
+    }
+
     fn explode_inward_with(
         &self,
         layer: usize,
         heuristic: Arc<dyn Fn(&Op) -> f64>,
-        amplitude: i32,
+        amplitude: i64,
     ) -> Vec<Manifold> {
         let mut left_self = self.clone();
         let mut right_self = self.clone();
 
-        let left_self_max_at_layer = left_self.find_max_op_with(layer, Arc::clone(&heuristic));
-        let right_self_max_at_layer = right_self.find_max_op_with(layer, Arc::clone(&heuristic));
+        let left_turned =
+            left_self.turn_greatest_influence_at_layer(layer, Arc::clone(&heuristic), -amplitude);
+        let right_turned =
+            right_self.turn_greatest_influence_at_layer(layer, Arc::clone(&heuristic), amplitude);
 
         let mut next_selves: Vec<Manifold> = vec![];
 
-        if let Some((six, ix, ..)) = left_self_max_at_layer {
-            if let Some(op) = left_self.select_op(layer, six, ix) {
-                op.neuron_ix = Manifold::turn_one(self.mesh_len, op.neuron_ix, -amplitude);
-                next_selves.push(left_self);
-            }
+        if left_turned {
+            next_selves.push(left_self);
         }
 
-        if let Some((six, ix, ..)) = right_self_max_at_layer {
-            if let Some(op) = right_self.select_op(layer, six, ix) {
-                op.neuron_ix = Manifold::turn_one(self.mesh_len, op.neuron_ix, amplitude);
-                next_selves.push(right_self);
-            }
+        if right_turned {
+            next_selves.push(right_self);
         }
 
         if layer <= 0 || next_selves.len() < 1 {
@@ -309,55 +340,187 @@ impl Manifold {
         self.loss = 0.;
     }
 
-    pub fn backwards(
+    fn cannibalize_layer(&mut self, other: &mut Manifold, layer: usize) {
+        let mine: Vec<HashMap<usize, Vec<Op>>> =
+            other.web.splice(layer..layer + 1, vec![]).collect();
+        self.web.splice(layer..layer + 1, mine);
+    }
+
+    pub fn backward_explode(
         &mut self,
-        loss: f64,
-        mut amplitude: i32,
-        x: &Vec<f64>,
-        y: &Vec<f64>,
+        mut amplitude: i64,
+        x: &Vec<&Vec<f64>>,
+        y: &Vec<&Vec<f64>>,
         loss_fn: &LossFn,
         post_processor: &PostProcessor,
         neuros: &Substrate,
-    ) {
-        // Manifold splits at every point of greatest influence along the pathway from end to start recursively.
+    ) -> (bool, f64) {
+        // Manifold splits at every point of greatest influence along the pathway from end to start recursively. O(2^n)
         // Incrementing the Op of greatest influence both +1/-1 neuron on the graph.
         // These pathways are then tested, and the best one lives. A mixture of backprop and genetic.
-        amplitude = (amplitude as f64 * loss.abs().powi(2)).floor() as i32;
+        self.reset_loss();
 
-        // Max amplitude
-        if amplitude as f32 > self.mesh_len as f32 / 3. {
-            amplitude = (self.mesh_len as f32 / 3.).floor() as i32;
-        }
-
-        let heuristic_action_potential = Arc::new(|op: &Op| op.action_potential);
-
-        let mut all_selves =
-            self.explode_inward_with(self.layers.len(), heuristic_action_potential, amplitude);
-
-        all_selves.iter_mut().for_each(|m| {
-            let mut signals = Signal::signalize(x.clone());
-            m.forward(&mut signals, neuros);
+        for (x, y) in x.iter().zip(y.iter()) {
+            let mut signals = Signal::signalize(x.to_vec());
+            self.forward(&mut signals, neuros);
             let signal_vector = post_processor(signals);
 
             let loss = loss_fn(&signal_vector, y);
-            m.accumulate_loss(loss);
-        });
+            self.accumulate_loss(loss);
+        }
 
-        let mut lossy_selves = VecDeque::from(all_selves);
-        lossy_selves.make_contiguous().sort_unstable_by(|m, n| {
-            m.loss
-                .partial_cmp(&n.loss)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        let loss = self.loss.clone();
 
-        let mut optimized = match lossy_selves.pop_front() {
-            Some(x) => x,
-            None => return,
-        };
+        amplitude = (amplitude as f64 * loss.powi(2)) as i64;
 
-        self.cannibalize(&mut optimized);
+        if amplitude < 1 {
+            amplitude = 1
+        }
 
-        drop(lossy_selves);
+        if amplitude as f32 > self.mesh_len as f32 / 2. {
+            amplitude = (self.mesh_len as f32 / 2.).floor() as i64;
+        }
+
+        let heuristic_action_potential = Arc::new(|op: &Op| op.action_potential * op.influence);
+
+        let all_selves =
+            self.explode_inward_with(self.layers.len(), heuristic_action_potential, amplitude);
+
+        for mut alternative_self in all_selves.into_iter() {
+            alternative_self.reset_loss();
+            for (x, y) in x.iter().zip(y.iter()) {
+                let mut signals = Signal::signalize(x.to_vec());
+                alternative_self.forward(&mut signals, neuros);
+                let signal_vector = post_processor(signals);
+                let loss = loss_fn(&signal_vector, y);
+
+                alternative_self.accumulate_loss(loss);
+            }
+
+            if alternative_self.loss < loss {
+                self.cannibalize(&mut alternative_self);
+            }
+        }
+
+        (true, self.loss)
+    }
+
+    pub fn backward_methodic(
+        &mut self,
+        mut amplitude: i64,
+        x: &Vec<&Vec<f64>>,
+        y: &Vec<&Vec<f64>>,
+        loss_fn: &LossFn,
+        post_processor: &PostProcessor,
+        neuros: &Substrate,
+    ) -> (bool, f64) {
+        // Manifold clones once for each point of greatest influence. There is no split. O(n)
+        // Incrementing the Op of greatest influence both +1/0/-1 neuron on the graph.
+        // These pathways are then tested, and the best one lives. A mixture of backprop and genetic.
+
+        // Gather my own loss first before proceeding.
+        self.reset_loss();
+
+        for (x, y) in x.iter().zip(y.iter()) {
+            let mut signals = Signal::signalize(x.to_vec());
+            self.forward(&mut signals, neuros);
+            let signal_vector = post_processor(signals);
+
+            let loss = loss_fn(&signal_vector, y);
+            self.accumulate_loss(loss);
+        }
+
+        let loss = self.loss.clone();
+
+        amplitude = (amplitude as f64 * loss.abs().powf(2.)) as i64;
+
+        if amplitude < 1 {
+            amplitude = 1
+        }
+
+        if amplitude as f32 > self.mesh_len as f32 / 2. {
+            amplitude = (self.mesh_len as f32 / 2.).floor() as i64;
+        }
+
+        let heuristic_action_potential =
+            Arc::new(|op: &Op| op.action_potential.powf(op.influence)) as Arc<dyn Fn(&Op) -> f64>;
+        let _heuristic_neuron_ix =
+            Arc::new(|op: &Op| op.neuron_ix as f64) as Arc<dyn Fn(&Op) -> f64>;
+
+        let heuristic = heuristic_action_potential;
+
+        let hyperview = (0..self.layers.len())
+            .into_iter()
+            .map(|layer| {
+                let mut left_self = self.clone();
+                let mut right_self = self.clone();
+
+                let left_turned = left_self.turn_greatest_influence_at_layer(
+                    layer,
+                    Arc::clone(&heuristic),
+                    -amplitude,
+                );
+
+                let right_turned = right_self.turn_greatest_influence_at_layer(
+                    layer,
+                    Arc::clone(&heuristic),
+                    amplitude,
+                );
+
+                let mut next_selves: Vec<Manifold> = vec![];
+
+                if left_turned {
+                    next_selves.push(left_self);
+                }
+
+                if right_turned {
+                    next_selves.push(right_self);
+                }
+
+                next_selves
+            })
+            .collect::<Vec<Vec<Manifold>>>();
+
+        let mut adapted_count = 0;
+        let mut alternative_count = 0;
+
+        for (layer_ix, layer) in hyperview.into_iter().enumerate() {
+            for mut alternative_self in layer.into_iter() {
+                alternative_self.reset_loss();
+                for (x, y) in x.iter().zip(y.iter()) {
+                    let mut signals = Signal::signalize(x.to_vec());
+                    alternative_self.forward(&mut signals, neuros);
+                    let signal_vector = post_processor(signals);
+                    let loss = loss_fn(&signal_vector, y);
+
+                    alternative_self.accumulate_loss(loss);
+                }
+
+                if alternative_self.loss < loss {
+                    self.cannibalize_layer(&mut alternative_self, layer_ix);
+                    adapted_count += 1;
+                    break;
+                }
+
+                alternative_count += 1;
+
+                print!("{}, ", alternative_self.loss);
+            }
+        }
+
+        println!("Alternatives: {}", alternative_count);
+        println!("Adaptations: {}", adapted_count);
+
+        if adapted_count < 1 {
+            // Check for early stop if loss is tolerable
+            // self.weave();
+            // Otherwise:
+            // - Mutate structure
+            // - Randomly change some neurons
+            // - Increase amplitude (not here)
+        }
+
+        (true, loss)
     }
 
     pub fn accumulate_loss(&mut self, a: f64) {
@@ -366,6 +529,35 @@ impl Manifold {
 
     pub fn reset_loss(&mut self) {
         self.loss = 0.;
+    }
+
+    pub fn current_neurons(&self) -> String {
+        let mut nmatch = String::default();
+
+        for h in self.web.iter() {
+            for op in h.values() {
+                for o in op.iter() {
+                    nmatch.push_str(format!("{},", o.neuron_ix).as_str());
+                }
+            }
+            nmatch.push_str("\n");
+        }
+
+        nmatch
+    }
+
+    pub fn neuron_ix_average(&self) -> f64 {
+        let mut ixlist: Vec<usize> = vec![];
+
+        for h in self.web.iter() {
+            for op in h.values() {
+                for o in op.iter() {
+                    ixlist.push(o.neuron_ix.clone());
+                }
+            }
+        }
+
+        ixlist.iter().fold(0., |a, v| a + *v as f64) / ixlist.len() as f64
     }
 }
 
@@ -377,7 +569,7 @@ pub struct Trainer<'a> {
     y: &'a Vec<Vec<f64>>,
     sample_size: usize,
     epochs: usize,
-    amplitude: i32,
+    amplitude: i64,
     post_processor: Option<PostProcessor>,
     loss_fn: Option<LossFn>,
 }
@@ -405,7 +597,7 @@ impl Trainer<'_> {
         self
     }
 
-    pub fn set_amplitude(&mut self, x: i32) -> &mut Self {
+    pub fn set_amplitude(&mut self, x: i64) -> &mut Self {
         self.amplitude = x;
         self
     }
@@ -427,7 +619,7 @@ impl Trainer<'_> {
         self
     }
 
-    pub fn sample(&self) -> Vec<(&Vec<f64>, &Vec<f64>)> {
+    pub fn sample(&self) -> (Vec<&Vec<f64>>, Vec<&Vec<f64>>) {
         let mut rng = thread_rng();
 
         let mut ixlist = (0..self.x.len()).collect::<Vec<usize>>();
@@ -435,12 +627,17 @@ impl Trainer<'_> {
         let sample_ixlist = (0..self.sample_size)
             .filter_map(|_| ixlist.pop())
             .collect::<Vec<usize>>();
-        let to_xy = sample_ixlist
-            .iter()
-            .map(|ix| (&self.x[ix.clone()], &self.y[*ix]))
-            .collect();
 
-        to_xy
+        let x = sample_ixlist
+            .iter()
+            .map(|ix| &self.x[ix.clone()])
+            .collect::<Vec<&Vec<f64>>>();
+        let y = sample_ixlist
+            .iter()
+            .map(|ix| &self.y[*ix])
+            .collect::<Vec<&Vec<f64>>>();
+
+        (x, y)
     }
 
     pub fn train<'a>(
@@ -464,34 +661,26 @@ impl Trainer<'_> {
         };
 
         for epoch in 0..self.epochs {
-            let samples = self.sample();
+            let (x, y) = self.sample();
             let mut losses: Vec<f64> = vec![];
 
-            for data in samples.into_iter() {
-                let (x, y) = data;
-                let mut signals = Signal::signalize(x.clone());
-                manifold.forward(&mut signals, neuros);
+            let (proceed, loss) = manifold.backward_explode(
+                self.amplitude,
+                &x,
+                &y,
+                &loss_fn,
+                &post_processor,
+                &neuros,
+            );
 
-                let signal_vector = post_processor(signals);
-                let target_vector = y.clone();
-
-                let loss = loss_fn(&signal_vector, &target_vector);
-
-                manifold.backwards(
-                    loss,
-                    self.amplitude,
-                    &x,
-                    &y,
-                    &loss_fn,
-                    &post_processor,
-                    &neuros,
-                );
-
-                losses.push(loss);
-            }
+            losses.push(loss);
 
             let avg_loss = losses.iter().fold(0., |a, v| a + v) / losses.len() as f64;
             println!("({} / {}) Avg loss: {}", epoch, self.epochs, avg_loss);
+
+            if !proceed {
+                break;
+            }
         }
 
         manifold

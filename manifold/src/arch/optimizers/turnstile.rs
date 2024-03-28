@@ -14,7 +14,7 @@ pub struct Turnstile {
     d_out: usize,
     breadth: Range<usize>,
     depth: Range<usize>,
-    turn_amplitude: Range<i32>,
+    turn_amplitude: Range<i64>,
     epochs: usize,
 }
 
@@ -114,7 +114,7 @@ impl Turnstile {
         d_out: usize,
         breadth: Range<usize>,
         depth: Range<usize>,
-        turn_amplitude: Range<i32>,
+        turn_amplitude: Range<i64>,
         epochs: usize,
     ) -> Turnstile {
         Turnstile {
@@ -159,7 +159,7 @@ impl Turnstile {
 
     pub fn turn_population(
         manifold: Arc<Mutex<Manifold>>,
-        turn_amplitude: Range<i32>,
+        turn_amplitude: Range<i64>,
         count: usize,
     ) -> Population {
         let mut p: Population = VecDeque::new();

@@ -2,7 +2,7 @@ use manifold::activation::ActivationType;
 use mnist::*;
 
 use manifold::f;
-use manifold::substrates::fully_connected::Neuron;
+use manifold::substrates::fully_connected::{Manifold, Neuron};
 
 fn normalize_mnist_xy(x: Vec<u8>, y: Vec<u8>) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
     let x = x.chunks_exact(784).collect::<Vec<&[u8]>>();

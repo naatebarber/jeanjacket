@@ -342,7 +342,7 @@ impl Manifold {
             combined_free_energy.merge_sum(merge);
         }
 
-        // println!("Free Energy: {:?}", combined_free_energy);
+        println!("Free Energy: {:?}", combined_free_energy);
 
         // Combine state of the system
 
@@ -360,7 +360,7 @@ impl Manifold {
             combined_blame.merge_sum(merge);
         }
 
-        // println!("Blame: {:?}", combined_blame);
+        println!("Blame: {:?}", combined_blame);
 
         // Calculate max free energy
 
@@ -374,7 +374,11 @@ impl Manifold {
             .iter_with_associated(&combined_blame)
             .into_iter()
             .map(|(op_ix, free_energy, influence)| {
-                // println!("Adjustment step, FE: {} INF: {}", free_energy, influence);
+                // DID OP CONTRIBUTE OR HARM?
+                // if op contributed to a positive move (one in the right direction) increase it's strength
+                // if op contributed to a negative move decrease it's strength.
+                // Right now I'm just flattening everything to reduce free energy.
+
                 let step_size = max_step * (free_energy / max_free_energy);
                 let direction = match *influence > 0. {
                     true => -1,
@@ -389,7 +393,7 @@ impl Manifold {
             })
             .collect::<Vec<(usize, i64)>>();
 
-        // println!("Corrective steps: {:?}", corrective_steps);
+        println!("Corrective steps: {:?}", corrective_steps);
 
         for (op_ix, corrective_steps) in corrective_steps.iter() {
             let op_ref = self.mutate_op(*op_ix);

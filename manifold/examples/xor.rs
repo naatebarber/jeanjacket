@@ -4,6 +4,8 @@ use manifold::substrates::blame_graph::{Manifold, Neuron, Signal, Trainer};
 use manifold::substrates::traits::SignalConversion;
 use rand::{prelude::*, thread_rng};
 
+// Why does this decrease when regression doesnt?
+
 fn gen_training_data(size: usize) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
     let mut x: Vec<Vec<f64>> = vec![];
     let mut y: Vec<Vec<f64>> = vec![];
@@ -30,22 +32,22 @@ fn train() {
     let (test_x, test_y) = gen_training_data(100);
 
     let (neuros, mesh_len) =
-        Neuron::load_substrate_or_create("xor", 1000000, 0.0..1.0, ActivationType::Elu);
+        Neuron::load_substrate_or_create("xor", 1000000, 0.0..1.0, ActivationType::Relu);
 
-    let mut manifold = Manifold::new(mesh_len, 2, 2, vec![10]);
+    let mut manifold = Manifold::new(mesh_len, 2, 2, vec![10, 10]);
     manifold.weave();
 
     let mut trainer = Trainer::new(&train_x, &train_y);
 
     trainer
-        .set_sample_size(8)
-        .set_epochs(3000)
-        .set_rate(0.1)
-        .set_post_processor(f::softmax)
-        .set_loss_fn(|signal, expected| {
-            let svs = signal.iter().map(|v| v.x).collect::<Vec<f64>>();
-            f::componentized_binary_cross_entropy(&svs, expected)
-        })
+        .set_sample_size(12)
+        .set_epochs(300)
+        .set_rate(0.005)
+        // .set_post_processor(f::softmax)
+        // .set_loss_fn(|signal, expected| {
+        //     let svs = signal.iter().map(|v| v.x).collect::<Vec<f64>>();
+        //     f::componentized_binary_cross_entropy(&svs, expected)
+        // })
         .train(&mut manifold, &neuros)
         .loss_graph();
 

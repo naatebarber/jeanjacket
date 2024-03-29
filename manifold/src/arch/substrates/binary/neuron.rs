@@ -50,6 +50,7 @@ impl Neuron {
             ActivationType::Relu => Activation::relu(x),
             ActivationType::LeakyRelu => Activation::leaky_relu(x),
             ActivationType::Elu => Activation::elu(x),
+            ActivationType::None => x,
         }
     }
 

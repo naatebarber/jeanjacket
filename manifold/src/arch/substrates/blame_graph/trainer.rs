@@ -16,6 +16,7 @@ pub struct Trainer<'a> {
     sample_size: usize,
     epochs: usize,
     rate: f64,
+    decay: f64,
     post_processor: PostProcessor,
     loss_fn: LossFn,
 }
@@ -29,6 +30,7 @@ impl Trainer<'_> {
             sample_size: 1,
             epochs: 1,
             rate: 0.1,
+            decay: 0.99,
             post_processor: Box::new(|x| x.to_vec()),
             loss_fn: Box::new(|signal, expected| {
                 signal
@@ -54,6 +56,11 @@ impl Trainer<'_> {
 
     pub fn set_rate(&mut self, x: f64) -> &mut Self {
         self.rate = x;
+        self
+    }
+
+    pub fn set_decay(&mut self, x: f64) -> &mut Self {
+        self.decay = x;
         self
     }
 
@@ -104,6 +111,7 @@ impl Trainer<'_> {
             for (&x, &y) in zip_x_y {
                 let mut signals = Signal::signalize(x.clone());
                 manifold.forward(&mut signals, neuros);
+                println!("System Input: {:?}", x);
                 println!(
                     "Unfiltered Prediction: {:?}",
                     signals.iter().map(|s| s.x).collect::<Vec<f64>>()
@@ -118,6 +126,8 @@ impl Trainer<'_> {
             let avg_loss = losses.iter().fold(0., |a, v| a + v) / losses.len() as f64;
             self.losses.push(avg_loss);
             println!("({} / {}) Avg loss: {}", epoch, self.epochs, avg_loss);
+
+            self.rate *= self.decay;
         }
 
         self

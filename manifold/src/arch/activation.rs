@@ -30,4 +30,5 @@ pub enum ActivationType {
     Relu,
     LeakyRelu,
     Elu,
+    None,
 }

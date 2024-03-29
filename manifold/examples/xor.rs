@@ -12,10 +12,10 @@ fn gen_training_data(size: usize) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
     let mut rng = thread_rng();
 
     let classes: Vec<(Vec<f64>, Vec<f64>)> = vec![
-        (vec![0., 1.], vec![1.]),
-        (vec![1., 1.], vec![0.]),
-        (vec![1., 0.], vec![1.]),
-        (vec![0., 0.], vec![0.]),
+        (vec![0., 1.], vec![1., 0.]),
+        (vec![1., 1.], vec![0., 1.]),
+        (vec![1., 0.], vec![1., 0.]),
+        (vec![0., 0.], vec![0., 1.]),
     ];
 
     for _ in 0..size {
@@ -34,14 +34,14 @@ fn train() {
     let (neuros, mesh_len) =
         Neuron::load_substrate_or_create("xor", 1000000, 0.0..1.0, ActivationType::Relu);
 
-    let mut manifold = Manifold::new(mesh_len, 2, 1, vec![10, 10]);
+    let mut manifold = Manifold::new(mesh_len, 2, 2, vec![10, 10]);
     manifold.weave();
 
     let mut trainer = Trainer::new(&train_x, &train_y);
 
     trainer
         .set_sample_size(12)
-        .set_epochs(1000)
+        .set_epochs(100)
         .set_rate(0.005)
         .set_post_processor(f::shape_sigmoid)
         .set_loss_fn(|signal, expected| {

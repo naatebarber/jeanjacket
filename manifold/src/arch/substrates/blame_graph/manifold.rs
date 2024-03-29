@@ -1,9 +1,8 @@
 use std::{
-    cell::{Ref, RefCell},
+    cell::RefCell,
     collections::{HashMap, VecDeque},
     ops::Range,
     rc::Rc,
-    sync::Arc,
 };
 
 use rand::{seq::SliceRandom, thread_rng, Rng};
@@ -53,7 +52,10 @@ pub struct Manifold {
     layers: LayerSchema,
     web: Web,
     flat: Flat,
-    pub loss: f64,
+    continuous_blame: Blame,
+    continuous_free_energy: Blame,
+    memory_window: usize,
+    updates: usize,
 }
 
 impl Manifold {
@@ -65,7 +67,10 @@ impl Manifold {
             layers,
             web: Web::new(),
             flat: Flat::new(),
-            loss: 0.,
+            continuous_blame: Blame::new(),
+            continuous_free_energy: Blame::new(),
+            memory_window: 30,
+            updates: 0,
         }
     }
 
@@ -88,8 +93,11 @@ impl Manifold {
             d_out,
             web: Web::new(),
             flat: Flat::new(),
+            continuous_blame: Blame::new(),
+            continuous_free_energy: Blame::new(),
+            memory_window: 30,
+            updates: 0,
             layers,
-            loss: 0.,
         }
     }
 
@@ -328,16 +336,35 @@ impl Manifold {
 
         println!("Blame: {:?}", combined_blame);
 
+        // Merge combined signal free energy with the manifold tracked free energy
+        // To track loss over multiple training steps
+
+        self.continuous_blame.merge_weighted(
+            combined_free_energy.clone(),
+            self.updates as f64,
+            1 as f64,
+        );
+        self.continuous_free_energy.merge_weighted(
+            combined_blame.clone(),
+            self.updates as f64,
+            1 as f64,
+        );
+
+        if self.updates < self.memory_window {
+            self.updates += 1;
+        }
+
         // Calculate max free energy
 
-        let max_free_energy = combined_free_energy.max();
+        let max_free_energy = self.continuous_free_energy.max();
 
         if max_free_energy == 0. {
             return 0.;
         }
 
-        let corrective_steps = combined_free_energy
-            .iter_with_associated(&combined_blame)
+        let corrective_steps = self
+            .continuous_free_energy
+            .iter_with_associated(&self.continuous_blame)
             .into_iter()
             .map(|(op_ix, free_energy, influence)| {
                 // DID OP CONTRIBUTE OR HARM?
@@ -370,46 +397,7 @@ impl Manifold {
             op.swap_focus(next_neuron_ix);
         }
 
-        combined_free_energy.sum()
-    }
-
-    pub fn accumulate_loss(&mut self, a: f64) {
-        self.loss += a;
-    }
-
-    pub fn reset_loss(&mut self) {
-        self.loss = 0.;
-    }
-
-    pub fn current_neurons(&self) -> String {
-        let mut nmatch = String::default();
-
-        for h in self.web.iter() {
-            for op in h.values() {
-                for o in op.iter() {
-                    let _o = o.borrow();
-                    nmatch.push_str(format!("{},", _o.neuron_ix).as_str());
-                }
-            }
-            nmatch.push_str("\n");
-        }
-
-        nmatch
-    }
-
-    pub fn neuron_ix_average(&self) -> f64 {
-        let mut ixlist: Vec<usize> = vec![];
-
-        for h in self.web.iter() {
-            for op in h.values() {
-                for o in op.iter() {
-                    let _o = o.borrow();
-                    ixlist.push(_o.neuron_ix.clone());
-                }
-            }
-        }
-
-        ixlist.iter().fold(0., |a, v| a + *v as f64) / ixlist.len() as f64
+        self.continuous_free_energy.sum()
     }
 }
 

@@ -43,3 +43,22 @@ The fucking thing learns, but instead of learning the problem itself it adjusts 
 For example - if the problem is binary classification with correct answers being either 0 or 1, the model will converge at 0.5.
 
 I think i have to make the blame graph out of multiple runs. it can't just optimize the most recent pass.
+
+try these in order:
+ - make blame graph consist of multiple forwards
+ - store blame graph on manifold
+ - make apply_blame aware of direction and not just loss.
+
+INFO The manifold managed loss is far less noisy. This is good.
+
+The blame graph algorithm is trying to find the median answer to all inputs instead of solving the problem.
+Need to reward good behavior as well as target bad behavior.
+
+
+
+// heres the rub
+
+
+
+I know the weight of a neuron on the output decision as a whole. 
+I just need to know whether that influence was good or bad.

@@ -156,20 +156,15 @@ impl Manifold {
                 }
             }
 
-            println!("layer len {}", layer.len());
             self.web.push(layer);
 
             prev_signals = *signals;
         }
-    }
 
-    pub fn discount_factor(&self) -> f64 {
-        let layers = self.web.len();
-        -(0.5 / (layers + 1) as f64) + 1.
-    }
-
-    pub fn discount(web_layer: usize, factor: f64) -> f64 {
-        factor.powi(web_layer as i32)
+        for layer in self.web.iter() {
+            println!("{:?}", layer);
+            println!();
+        }
     }
 
     pub fn forward(&mut self, signals: &mut VecDeque<Signal>, neuros: &Substrate) {
@@ -177,8 +172,18 @@ impl Manifold {
             let total_turns = signals.len();
             let mut turns = 0;
 
+            let mut revisit_merge: VecDeque<Signal> = VecDeque::new();
+            let mut forwarded = 0;
+
             while turns < total_turns {
-                // Need multiple ops per layer for growing network size.
+                let mut target_signal = match signals.pop_front() {
+                    Some(s) => s,
+                    None => return,
+                };
+
+                // INFO It's not guaranteed the signals will be in order.
+                // For example in a shrink operation, weave might have retained signal 7
+                // but dropped signal 1. That is why we revisit.
                 let ops_for_turn = match layer.get_mut(&turns) {
                     Some(x) => {
                         turns += 1;
@@ -186,53 +191,9 @@ impl Manifold {
                     }
                     None => {
                         turns += 1;
-                        // INFO Instead of dropping the signal here, maybe we combine
-                        // it with an existing one in order to preserve blame?
-                        // wrapping the dropped signals over the retained ones might result
-                        // in a "topheavy" network, where the top layers are predisposed
-                        // to higher values.
-
-                        // Random assignment would create unreproduceable results.
-
-                        // Either way, anything is better than a straight up drop. A blame
-                        // graph cannot function with incomplete data.
-
-                        // merging could provide a good opportunity to strengthen other signals.
-                        // maybe we use the leftover signals to contribute to weak points in the network.
-
-                        // INFO Handle remaining signals here to avoid redundant Op lookup.
-                        // Drain the remaining turns out of the signals deque so we can effectively
-                        // Search and merge with the new signals produced prior.
-                        // Search methods are expensive in a wide network
-                        let leftover_signals = signals
-                            .drain(0..total_turns - turns)
-                            .collect::<Vec<Signal>>();
-
-                        for leftover_signal in leftover_signals.into_iter() {
-                            let mut least_mutations_ix = 0;
-                            let mut min_mutations = usize::MAX;
-                            for (ix, signal) in signals.iter_mut().enumerate() {
-                                if signal.mutations <= min_mutations {
-                                    min_mutations = signal.mutations;
-                                    least_mutations_ix = ix;
-                                }
-                            }
-
-                            signals
-                                .get_mut(least_mutations_ix)
-                                .unwrap()
-                                .merge_seniority(leftover_signal);
-                        }
-
-                        break;
+                        revisit_merge.push_back(target_signal);
+                        continue;
                     }
-                };
-
-                // INFO by moving this here, signals no longer reduce.
-                // i must handle the merging / reduction in the above None block
-                let mut target_signal = match signals.pop_front() {
-                    Some(s) => s,
-                    None => return,
                 };
 
                 // INFO Split happens here where we pass one signal to potentially many ops,
@@ -240,12 +201,29 @@ impl Manifold {
                 let mut next_signals = ops_for_turn
                     .iter_mut()
                     .map(|op| {
+                        forwarded += 1;
                         op.borrow_mut()
                             .forward(&mut target_signal, signals, &neuros)
                     })
                     .collect::<VecDeque<Signal>>();
 
                 signals.append(&mut next_signals);
+            }
+
+            for signal in revisit_merge.into_iter() {
+                let mut least_mutations_ix = 0;
+                let mut min_mutations = usize::MAX;
+                for (ix, signal) in signals.iter_mut().enumerate() {
+                    if signal.mutations <= min_mutations {
+                        min_mutations = signal.mutations;
+                        least_mutations_ix = ix;
+                    }
+                }
+
+                signals
+                    .get_mut(least_mutations_ix)
+                    .unwrap()
+                    .merge_seniority(signal);
             }
         }
     }
@@ -331,20 +309,21 @@ impl Manifold {
 
     pub fn apply_blame(
         &mut self,
-        signals: &mut VecDeque<Signal>,
+        signals: &VecDeque<Signal>,
         expected: &[f64],
+        green_fn: impl Fn(&VecDeque<Signal>, &[f64]) -> Vec<f64>,
         max_step: f64,
     ) -> f64 {
         println!(
-            "Pred: {:?} Actual: {:?}",
-            signals.iter().map(|x| x.x).collect::<Vec<f64>>(),
-            expected
+            "Processed Prediction: {:?}",
+            signals.iter().map(|x| x.x).collect::<Vec<f64>>()
         );
 
-        let actual_expected = signals.iter().zip(expected.iter());
-        let free_energy = actual_expected
-            .map(|(signal, expected)| (expected - signal.x).powi(2))
-            .collect::<Vec<f64>>();
+        println!("Expected: {:?}", expected);
+
+        let free_energy = green_fn(&signals, &expected);
+
+        println!("Loss: {:?}", free_energy);
 
         // Combine free energy of the system
 
@@ -388,7 +367,7 @@ impl Manifold {
         let max_free_energy = combined_free_energy.max();
 
         if max_free_energy == 0. {
-            panic!("Gradient vanished. Must halt.");
+            return 0.;
         }
 
         let corrective_steps = combined_free_energy

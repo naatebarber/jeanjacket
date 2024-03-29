@@ -1,3 +1,5 @@
+use std::f64::consts::E;
+
 pub fn relu(x: f64) -> f64 {
     if x < 0. {
         return 0.;
@@ -17,4 +19,8 @@ pub fn elu(x: f64) -> f64 {
         return x.exp() - 1.;
     }
     x
+}
+
+pub fn sigmoid(x: f64) -> f64 {
+    1. / (1. + E.powf(-x))
 }

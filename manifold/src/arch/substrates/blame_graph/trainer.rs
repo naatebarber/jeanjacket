@@ -1,10 +1,12 @@
+use std::collections::VecDeque;
+
 use super::{Manifold, Signal, Substrate};
 use crate::f;
 use crate::substrates::traits::SignalConversion;
 use plotly::{Bar, Plot};
 use rand::{prelude::*, thread_rng};
 
-pub type LossFn = Box<dyn Fn(&[f64], &[f64]) -> f64>;
+pub type LossFn = Box<dyn Fn(&VecDeque<Signal>, &[f64]) -> Vec<f64>>;
 pub type PostProcessor = Box<dyn Fn(&[f64]) -> Vec<f64>>;
 
 pub struct Trainer<'a> {
@@ -28,7 +30,15 @@ impl Trainer<'_> {
             epochs: 1,
             rate: 0.1,
             post_processor: Box::new(|x| x.to_vec()),
-            loss_fn: Box::new(f::mean_squared_error),
+            loss_fn: Box::new(|signal, expected| {
+                signal
+                    .iter()
+                    .zip(expected.iter())
+                    .map(|(signal, expected)| {
+                        f::mean_squared_error(&vec![signal.x], &vec![*expected])
+                    })
+                    .collect::<Vec<f64>>()
+            }),
         }
     }
 
@@ -57,9 +67,9 @@ impl Trainer<'_> {
 
     pub fn set_loss_fn(
         &mut self,
-        processor: impl Fn(&[f64], &[f64]) -> f64 + 'static,
+        loss_fn: impl Fn(&VecDeque<Signal>, &[f64]) -> Vec<f64> + 'static,
     ) -> &mut Self {
-        self.loss_fn = Box::new(processor) as Box<dyn Fn(&[f64], &[f64]) -> f64>;
+        self.loss_fn = Box::new(loss_fn) as Box<dyn Fn(&VecDeque<Signal>, &[f64]) -> Vec<f64>>;
         self
     }
 
@@ -94,10 +104,15 @@ impl Trainer<'_> {
             for (&x, &y) in zip_x_y {
                 let mut signals = Signal::signalize(x.clone());
                 manifold.forward(&mut signals, neuros);
+                println!(
+                    "Unfiltered Prediction: {:?}",
+                    signals.iter().map(|s| s.x).collect::<Vec<f64>>()
+                );
                 Signal::transform_output_slice(&mut signals, &self.post_processor);
-                let system_free_energy = manifold.apply_blame(&mut signals, y, self.rate);
+                let system_free_energy =
+                    manifold.apply_blame(&mut signals, y, &self.loss_fn, self.rate);
                 losses.push(system_free_energy);
-                // sleep(Duration::from_millis(100));
+                println!();
             }
 
             let avg_loss = losses.iter().fold(0., |a, v| a + v) / losses.len() as f64;

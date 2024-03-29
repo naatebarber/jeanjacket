@@ -36,3 +36,10 @@ TODO
  - if an op is pegged at max (with sticky turns enabled), and blame tells it to go higher, distribute it's blame elsewhere.
  - signal recycling? send that motherfucker back through.
  - manifold-managed blame for long-term decision making. huge for RL and strategy.
+
+Friday march 29th 7pm 
+
+The fucking thing learns, but instead of learning the problem itself it adjusts weights to the average of the problem space.
+For example - if the problem is binary classification with correct answers being either 0 or 1, the model will converge at 0.5.
+
+I think i have to make the blame graph out of multiple runs. it can't just optimize the most recent pass.

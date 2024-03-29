@@ -27,7 +27,7 @@ fn main() {
     let (neuros, mesh_len) =
         Neuron::load_substrate_or_create("approx", 100000, -1.0..1.0, ActivationType::Relu);
 
-    let mut manifold = Manifold::new(mesh_len, 1, 1, vec![5, 8, 3]);
+    let mut manifold = Manifold::new(mesh_len, 1, 1, vec![5, 8]);
     manifold.weave();
 
     let mut trainer = Trainer::new(&dataset.0, &dataset.1);
@@ -39,7 +39,7 @@ fn main() {
             let svs = signal.iter().map(|v| v.x).collect::<Vec<f64>>();
             f::componentized_mean_squared_error(&svs, expected)
         })
-        .set_rate(0.2)
+        .set_rate(0.1)
         .set_decay(0.99)
         .train(&mut manifold, &neuros)
         .loss_graph();

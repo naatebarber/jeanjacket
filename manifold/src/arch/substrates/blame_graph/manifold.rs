@@ -210,21 +210,22 @@ impl Manifold {
                 signals.append(&mut next_signals);
             }
 
-            for signal in revisit_merge.into_iter() {
-                let mut least_mutations_ix = 0;
-                let mut min_mutations = usize::MAX;
-                for (ix, signal) in signals.iter_mut().enumerate() {
-                    if signal.mutations <= min_mutations {
-                        min_mutations = signal.mutations;
-                        least_mutations_ix = ix;
-                    }
-                }
+            // MERGING HURTS THE ALGORITHM!
+            // for signal in revisit_merge.into_iter() {
+            //     let mut least_mutations_ix = 0;
+            //     let mut min_mutations = usize::MAX;
+            //     for (ix, signal) in signals.iter_mut().enumerate() {
+            //         if signal.mutations <= min_mutations {
+            //             min_mutations = signal.mutations;
+            //             least_mutations_ix = ix;
+            //         }
+            //     }
 
-                signals
-                    .get_mut(least_mutations_ix)
-                    .unwrap()
-                    .merge_seniority(signal);
-            }
+            //     signals
+            //         .get_mut(least_mutations_ix)
+            //         .unwrap()
+            //         .merge_seniority(signal);
+            // }
         }
     }
 
@@ -258,41 +259,6 @@ impl Manifold {
         }
 
         turned as usize
-    }
-
-    pub fn find_max_op_with(
-        &self,
-        layer: usize,
-        heuristic: Arc<dyn Fn(Ref<Op>) -> f64>,
-    ) -> Rc<RefCell<Op>> {
-        if self.flat.len() == 0 {
-            panic!("Operation graph is empty.");
-        }
-
-        if self.layers.len() - 1 > layer {
-            panic!(
-                "Layer {} out of bounds for {} layer mesh",
-                layer,
-                self.layers.len()
-            );
-        }
-
-        let mut max = f64::MIN;
-        let mut choice = Rc::clone(&self.flat.get(&0).unwrap());
-
-        self.flat.values().for_each(|op| {
-            let _op = op.borrow();
-            if _op.layer != layer {
-                return;
-            }
-            let v = heuristic(_op);
-            if v >= max {
-                choice = Rc::clone(&op);
-                max = v
-            }
-        });
-
-        choice
     }
 
     pub fn mutate_op(&mut self, id: usize) -> Rc<RefCell<Op>> {

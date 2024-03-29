@@ -31,3 +31,8 @@ MANIFOLD BLAME
 
 Keep the long term blame on Manifold, and have the signals modify it upon a loss step.
 This will contribute to the instant loss associated with one forward pass.
+
+TODO
+ - if an op is pegged at max (with sticky turns enabled), and blame tells it to go higher, distribute it's blame elsewhere.
+ - signal recycling? send that motherfucker back through.
+ - manifold-managed blame for long-term decision making. huge for RL and strategy.

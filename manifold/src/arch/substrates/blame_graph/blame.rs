@@ -54,14 +54,18 @@ impl Blame {
     }
 
     pub fn distribute(&self, x: f64) -> Blame {
-        let total_blame = self.graph.values().fold(0., |a, v| a + (*v).abs());
+        let total_blame = self.graph.values().fold(0., |a, v| a + ((*v).abs()));
         let mut distributed_alternative = self.clone();
         for (_, influence) in distributed_alternative.graph.iter_mut() {
-            let assignment = *influence / total_blame;
+            let assignment = (*influence / total_blame).abs();
             *influence = assignment * x;
         }
 
         distributed_alternative
+    }
+
+    pub fn sum(&self) -> f64 {
+        self.graph.values().fold(0., |a, v| a + v)
     }
 
     pub fn max(&self) -> f64 {
@@ -76,7 +80,7 @@ impl Blame {
     pub fn iter_with_associated<'a>(&'a self, blame: &'a Blame) -> Vec<(&usize, &f64, &f64)> {
         self.graph
             .keys()
-            .filter_map(|k| match (k, blame.graph.get(k), self.graph.get(&k)) {
+            .filter_map(|k| match (k, self.graph.get(&k), blame.graph.get(k)) {
                 (_, Some(x), Some(y)) => Some((k, x, y)),
                 _ => None,
             })

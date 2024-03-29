@@ -156,6 +156,7 @@ impl Manifold {
                 }
             }
 
+            println!("layer len {}", layer.len());
             self.web.push(layer);
 
             prev_signals = *signals;
@@ -328,7 +329,18 @@ impl Manifold {
         Rc::clone(self.flat.get(&id).unwrap())
     }
 
-    pub fn apply_blame(&mut self, signals: &mut VecDeque<Signal>, expected: &[f64], max_step: f64) {
+    pub fn apply_blame(
+        &mut self,
+        signals: &mut VecDeque<Signal>,
+        expected: &[f64],
+        max_step: f64,
+    ) -> f64 {
+        println!(
+            "Pred: {:?} Actual: {:?}",
+            signals.iter().map(|x| x.x).collect::<Vec<f64>>(),
+            expected
+        );
+
         let actual_expected = signals.iter().zip(expected.iter());
         let free_energy = actual_expected
             .map(|(signal, expected)| (expected - signal.x).powi(2))
@@ -344,12 +356,14 @@ impl Manifold {
 
         let mut combined_free_energy = match each_free_energy.pop() {
             Some(x) => x,
-            None => return,
+            None => return 0.,
         };
 
         while let Some(merge) = each_free_energy.pop() {
             combined_free_energy.merge_sum(merge);
         }
+
+        // println!("Free Energy: {:?}", combined_free_energy);
 
         // Combine state of the system
 
@@ -360,35 +374,54 @@ impl Manifold {
 
         let mut combined_blame = match each_blame.pop() {
             Some(x) => x,
-            None => return,
+            None => return 0.,
         };
 
         while let Some(merge) = each_blame.pop() {
             combined_blame.merge_sum(merge);
         }
 
+        // println!("Blame: {:?}", combined_blame);
+
         // Calculate max free energy
 
         let max_free_energy = combined_free_energy.max();
 
-        for (op_ix, free_energy, influence) in
-            combined_free_energy.iter_with_associated(&combined_blame)
-        {
-            let step_size = max_step * (free_energy / max_free_energy);
-            let direction = match *influence > 0. {
-                true => 1,
-                false => -1,
-            };
+        if max_free_energy == 0. {
+            panic!("Gradient vanished. Must halt.");
+        }
 
-            let mut steps = (step_size * self.mesh_len as f64) as i64;
-            steps *= direction;
+        let corrective_steps = combined_free_energy
+            .iter_with_associated(&combined_blame)
+            .into_iter()
+            .map(|(op_ix, free_energy, influence)| {
+                // println!("Adjustment step, FE: {} INF: {}", free_energy, influence);
+                let step_size = max_step * (free_energy / max_free_energy);
+                let direction = match *influence > 0. {
+                    true => -1,
+                    false => 1,
+                };
 
+                let mut steps = (step_size * self.mesh_len as f64) as i64;
+
+                steps *= direction;
+
+                (*op_ix, steps)
+            })
+            .collect::<Vec<(usize, i64)>>();
+
+        // println!("Corrective steps: {:?}", corrective_steps);
+
+        for (op_ix, corrective_steps) in corrective_steps.iter() {
             let op_ref = self.mutate_op(*op_ix);
             let mut op = op_ref.borrow_mut();
             let current_neuron_ix = op.neuron_ix;
-            let next_neuron_ix = Manifold::turn_one(self.mesh_len, current_neuron_ix, steps, true);
+            let next_neuron_ix =
+                Manifold::turn_one(self.mesh_len, current_neuron_ix, *corrective_steps, true);
             op.swap_focus(next_neuron_ix);
         }
+
+        combined_free_energy.sum()
     }
 
     pub fn accumulate_loss(&mut self, a: f64) {

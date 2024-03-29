@@ -66,4 +66,16 @@ impl Signal {
     pub fn pop_blame(&self) -> Blame {
         self.blame.clone()
     }
+
+    pub fn transform_output_slice(
+        signals: &mut VecDeque<Signal>,
+        transformer: impl Fn(&[f64]) -> Vec<f64>,
+    ) {
+        let mut as_vec = signals.iter().map(|s| s.x.clone()).collect::<Vec<f64>>();
+        as_vec = transformer(&as_vec);
+        as_vec
+            .iter()
+            .zip(signals)
+            .for_each(|(transformed_x, signal)| signal.x = *transformed_x)
+    }
 }

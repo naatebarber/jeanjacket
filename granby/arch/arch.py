@@ -112,7 +112,7 @@ class QArchFF(nn.Module, QArch):
         self,
         state: torch.TensorType,
         act: Callable[[torch.TensorType], Tuple[Any, torch.TensorType]],
-        pack_loss: Callable[[torch.TensorType], None] = None
+        pack_loss: Callable[[torch.TensorType], None] = None,
     ):
         current_q_values = self.forward(state)
         current_q_max = current_q_values.max(1)[0]
@@ -163,7 +163,7 @@ class Diluted(TypedDict):
 class BagOptimizer:
     def __init__(self, bag: Bag, env: Env, model: QArch):
         self.bag = bag
-        self.env = env        
+        self.env = env
         self.model = model
 
         meta = bag.get("meta")
